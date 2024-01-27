@@ -81,14 +81,13 @@ def main():
                             quit()
             try:
                 driver.find_element(By.CSS_SELECTOR, '.fa-compact-disc')
-                song_list.write(f'{artist} - {f} - SONGS: \n')
+                song_list.write(f'ARTIST: {artist} > ALBUM: {f} > SONGS: \n')
                 songs = grab_songs()
                 for item in songs:
                     song_list.write(f'{item}\n')
                 song_list.write('\n')
             except NoSuchElementException:
-                song_list.write(f'{artist} - {f} - !> NO SONGS FOUND <!\n\n')
-    driver.quit()
+                song_list.write(f'ARTIST: {artist} > ALBUM: {f} > ! NO SONGS FOUND !\n\n')
 
 
 def grab_songs():
@@ -101,9 +100,68 @@ def grab_songs():
 
 
 def remove_special_characters(s):
-    # remove all special characters except for hyphens
-    return re.sub(r'[^a-zA-Z0-9\s-]', '', s)
+    # Replace spaces with hyphens - this is to try to get around the issue with ' in album names
+    s = s.replace("'", " ")
+    s = s.replace(" ", "-")
+    s = s.replace(".", "-")
+    s = s.replace("---", "-")
+    s = s.replace("--", "-")
+    # Use regular expression to remove special characters, excluding apostrophes in words
+    return re.sub(r'[^a-zA-Z0-9\s-]|(?<=\w)\'(?=\w)', '', s)
+
+
+def music_video():
+    # Open the text file for reading
+    with open("songlist.txt", 'r', encoding='utf-8') as file:
+        # Initialize variables to store current artist, album, and songs
+        current_artist = None
+        current_album = None
+        current_songs = []
+
+        # Iterate over the lines in the file
+        for line in file:
+            # Clean up the line by stripping leading and trailing whitespaces
+            line = line.strip()
+
+            # Debug print to check each line
+            print(f"DEBUG: {line}")
+
+            # Check if the line contains ">"
+            if ">" in line:
+                # Split the line at ">" and extract words between them
+                parts = line.split(">")
+
+                # Clean up parts by stripping leading and trailing whitespaces
+                parts = [part.strip() for part in parts]
+
+                # Debug print to check key and parts
+                print(f"DEBUG: Key: {parts[0]}, Parts: {parts[1:]}")
+
+                # If the key is "ARTIST", update the current artist
+                if parts[0] == "ARTIST":
+                    # If this is not the first iteration, print the accumulated information
+                    if current_artist:
+                        print(f"ARTIST: {current_artist}, ALBUM: {current_album}, SONGS: {'; '.join(current_songs)};\n")
+                    # Reset variables for the new artist
+                    current_artist = parts[1]
+                    current_album = None
+                    current_songs = []
+
+                # If the key is "ALBUM", update the current album
+                elif parts[0] == "ALBUM":
+                    current_album = parts[1]
+
+                # If the key is "SONGS", read and store all songs until the next artist
+                elif parts[0] == "SONGS":
+                    # Split songs using ";" and strip each song
+                    current_songs = [song.strip() for song in parts[1].split(';')]
+
+        # Print the last artist information after the loop
+        if current_artist:
+            print(f"ARTIST: {current_artist}, ALBUM: {current_album}, SONGS: {'; '.join(current_songs)};")
 
 
 if __name__ == '__main__':
-    main()
+    # main() # commented out as this is working now. need to get the next section working
+    music_video()
+    driver.quit()

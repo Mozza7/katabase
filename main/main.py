@@ -9,21 +9,25 @@ from selenium.common.exceptions import NoSuchElementException, TimeoutException
 # other tools
 import re
 import time
-
-# Setup geckodriver (Firefox)
-options = Options()
-options.headless = False
-geckodriver_path = 'drivers/geckodriver.exe'
-service = Service(executable_path=geckodriver_path)
-driver = webdriver.Firefox(options=options, service=service)
+import sqlite3
 
 
-def main():
+def db_init(chosen_year):
+    con = sqlite3.connect('kp_albums.db')
+    cur = con.cursor()
+    try:
+        cur.execute(f'DROP TABLE IF EXISTS y{chosen_year}')
+    except sqlite3.OperationalError:
+        pass
+    print(f'y{chosen_year}')
+    cur.execute(f"CREATE TABLE y{chosen_year}(artist, album, songs, url)")
+    con.commit()
+    return con, cur
+
+
+def main(kpop_year):
     # Open kpopping
-    # kpop_year = input("Type the year you are looking for data on: ")
-    # driver.get(f"https://kpopping.com/musicalbums/year-{kpop_year}")
-    # MAKE CUSTOMISABLE, USING 2022 FOR TESTING PURPOSES
-    driver.get("https://kpopping.com/musicalbums/year-2022")
+    driver.get(f"https://kpopping.com/musicalbums/year-{kpop_year}")
 
     # on webpage, find all artists and albums in the list
     artists = driver.find_elements(By.CSS_SELECTOR, 'a[href*="/profiles/idol"]')
@@ -39,13 +43,12 @@ def main():
 
     for album in albums:
         albums_list_raw.append(album.text)
-        # CHANGE "2022-" TO BE CUSTOMISABLE
         # edit list to match the formatting of kpopping links
-        albums_list1 = ["2022-" + item.replace(" ", "-") for item in albums_list_raw]
+        albums_list1 = [f"{kpop_year}-" + item.replace(" ", "-") for item in albums_list_raw]
         # does NOT remove - (hyphens)
         albums_list = [remove_special_characters(item) for item in albums_list1]
 
-        # error can be ignored, albums_list can NOT be undefined
+        # error can be ignored
     merged_list = list(zip(artists_list, albums_list))
     # convert to dictionary to make sorting easier later
     merged_dict = {}
@@ -55,12 +58,6 @@ def main():
         else:
             merged_dict[artist].append(album)
 
-    # overwrite existing list
-    with open('songlist.txt', 'w+', encoding='utf-8') as f:
-        f.write('ARTIST - ALBUM - SONGS\n\n')
-
-    # open list for appending within for loop
-    song_list = open('songlist.txt', 'w', encoding='utf-8')
     for artist, album in merged_dict.items():
         print(artist)
         for f in album:
@@ -76,18 +73,25 @@ def main():
                         break
                     except TimeoutException:
                         if attempt == 6:
-                            song_list.write('TIMEOUT. 6 ATTEMPTS MADE OVER 3 MINUTES.')
+                            print('TIMEOUT. 6 ATTEMPTS MADE OVER 3 MINUTES.')
                             driver.quit()
                             quit()
             try:
                 driver.find_element(By.CSS_SELECTOR, '.fa-compact-disc')
-                song_list.write(f'ARTIST: {artist} > ALBUM: {f} > SONGS: \n')
                 songs = grab_songs()
+                # DATABASE IS IN FORMAT artist, album, songs, url
+                # db_album used to format album name into a more readable format
+                db_album = str(album[4:]).replace('-', '')
                 for item in songs:
-                    song_list.write(f'{item}\n')
-                song_list.write('\n')
+                    cur.execute(f"INSERT INTO y{chosen_year_q} (artist,album,songs) VALUES (?,?,?)", (artist, db_album,
+                                                                                                   item))
+                    kp_db.commit()
             except NoSuchElementException:
-                song_list.write(f'ARTIST: {artist} > ALBUM: {f} > ! NO SONGS FOUND !\n\n')
+                no_album = 'N/A'
+                no_song = 'N/A'
+                cur.execute(f"INSERT INTO y{chosen_year_q} (artist,album,songs) VALUES (?,?,?)", (artist, no_album,
+                                                                                                    no_song))
+                kp_db.commit()
 
 
 def grab_songs():
@@ -101,6 +105,8 @@ def grab_songs():
 
 def remove_special_characters(s):
     # Replace spaces with hyphens - this is to try to get around the issue with ' in album names
+    # had to add more as some were coming out with -- and --- in the names, this has fixed all issues of this kind
+    # SO FAR
     s = s.replace("'", " ")
     s = s.replace(" ", "-")
     s = s.replace(".", "-")
@@ -111,57 +117,28 @@ def remove_special_characters(s):
 
 
 def music_video():
-    # Open the text file for reading
-    with open("songlist.txt", 'r', encoding='utf-8') as file:
-        # Initialize variables to store current artist, album, and songs
-        current_artist = None
-        current_album = None
-        current_songs = []
-
-        # Iterate over the lines in the file
-        for line in file:
-            # Clean up the line by stripping leading and trailing whitespaces
-            line = line.strip()
-
-            # Debug print to check each line
-            print(f"DEBUG: {line}")
-
-            # Check if the line contains ">"
-            if ">" in line:
-                # Split the line at ">" and extract words between them
-                parts = line.split(">")
-
-                # Clean up parts by stripping leading and trailing whitespaces
-                parts = [part.strip() for part in parts]
-
-                # Debug print to check key and parts
-                print(f"DEBUG: Key: {parts[0]}, Parts: {parts[1:]}")
-
-                # If the key is "ARTIST", update the current artist
-                if parts[0] == "ARTIST":
-                    # If this is not the first iteration, print the accumulated information
-                    if current_artist:
-                        print(f"ARTIST: {current_artist}, ALBUM: {current_album}, SONGS: {'; '.join(current_songs)};\n")
-                    # Reset variables for the new artist
-                    current_artist = parts[1]
-                    current_album = None
-                    current_songs = []
-
-                # If the key is "ALBUM", update the current album
-                elif parts[0] == "ALBUM":
-                    current_album = parts[1]
-
-                # If the key is "SONGS", read and store all songs until the next artist
-                elif parts[0] == "SONGS":
-                    # Split songs using ";" and strip each song
-                    current_songs = [song.strip() for song in parts[1].split(';')]
-
-        # Print the last artist information after the loop
-        if current_artist:
-            print(f"ARTIST: {current_artist}, ALBUM: {current_album}, SONGS: {'; '.join(current_songs)};")
+    # uses database created in main() to search for songs that have music videos / performance videos
+    # data is then added to an excel in format:
+    # ARTIST | ALBUM        | SONGS                     | MUSIC/PERFORMANCE VIDEO
+    # YENA   | GOOD MORNING | GOOD MORNING              |   Y
+    #                       | GOOD GIRLS IN THE DARK    |   N
+    #                       | DAMN U                    |   N
+    #                       | THE UGLY DUCKLING         |   N
+    pass
 
 
 if __name__ == '__main__':
-    # main() # commented out as this is working now. need to get the next section working
-    music_video()
+    chosen_year_q = input('Year to get data for (format: YYYY e.g 2024): ')
+    # chosen_year = int(site_year)
+
+    kp_db, cur = db_init(chosen_year_q)
+    kp_db.commit()
+    # Setup geckodriver (Firefox)
+    options = Options()
+    options.headless = False
+    geckodriver_path = 'drivers/geckodriver.exe'
+    service = Service(executable_path=geckodriver_path)
+    driver = webdriver.Firefox(options=options, service=service)
+    main(chosen_year_q)
+    # music_video()
     driver.quit()

@@ -185,7 +185,7 @@ if __name__ == '__main__':
     # # Setup geckodriver (Firefox)
     # options = Options()
     # options.headless = False
-    # geckodriver_path = 'drivers/geckodriver.exe'
+    # geckodriver_path = 'geckodriver.exe'
     # service = Service(executable_path=geckodriver_path)
     # driver = webdriver.Firefox(options=options, service=service)
     # main(chosen_year_q)

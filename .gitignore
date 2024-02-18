@@ -2,8 +2,4 @@
 main/kp_albums.db
 
 keys.txt
-main/format_response.txt
-main/raw_response.txt
-main/response.txt
-main/config.json
-main/songlist.txt
+main/*.txt

@@ -10,18 +10,31 @@ from selenium.common.exceptions import NoSuchElementException, TimeoutException
 import re
 import time
 import sqlite3
+# YouTube API
+import json
+import googleapiclient.discovery
+
+
+# API info
+api_service_name = 'youtube'
+api_version = 'v3'
+with open('config.json') as f:
+    config = json.load(f)
+API_KEY = config['API_KEY']
+youtube = googleapiclient.discovery.build(
+    api_service_name, api_version, developerKey=API_KEY)
 
 
 def db_init(chosen_year):
     con = sqlite3.connect('kp_albums.db')
     cur = con.cursor()
-    try:
-        cur.execute(f'DROP TABLE IF EXISTS y{chosen_year}')
-    except sqlite3.OperationalError:
-        pass
+    #try:
+    #    cur.execute(f'DROP TABLE IF EXISTS y{chosen_year}')
+    #except sqlite3.OperationalError:
+    #    pass
     print(f'y{chosen_year}')
-    cur.execute(f"CREATE TABLE y{chosen_year}(artist, album, songs, url)")
-    con.commit()
+    #cur.execute(f"CREATE TABLE y{chosen_year}(artist, album, songs, url, mv, mvverified)")
+    #con.commit()
     return con, cur
 
 
@@ -79,12 +92,14 @@ def main(kpop_year):
             try:
                 driver.find_element(By.CSS_SELECTOR, '.fa-compact-disc')
                 songs = grab_songs()
-                # DATABASE IS IN FORMAT artist, album, songs, url
+                # DATABASE IS IN FORMAT artist, album, songs, url, friendly_name
                 # db_album used to format album name into a more readable format
                 db_album = str(album[4:]).replace('-', '')
                 for item in songs:
-                    cur.execute(f"INSERT INTO y{chosen_year_q} (artist,album,songs) VALUES (?,?,?)", (artist, db_album,
-                                                                                                   item))
+                    # FNAME
+                    print(item)
+                    cur.execute(f"INSERT INTO y{chosen_year_q} (artist,album,songs) VALUES (?,?,?)",
+                                (artist, db_album, item))
                     kp_db.commit()
             except NoSuchElementException:
                 no_album = 'N/A'
@@ -117,28 +132,62 @@ def remove_special_characters(s):
 
 
 def music_video():
-    # uses database created in main() to search for songs that have music videos / performance videos
-    # data is then added to an excel in format:
-    # ARTIST | ALBUM        | SONGS                     | MUSIC/PERFORMANCE VIDEO
-    # YENA   | GOOD MORNING | GOOD MORNING              |   Y
-    #                       | GOOD GIRLS IN THE DARK    |   N
-    #                       | DAMN U                    |   N
-    #                       | THE UGLY DUCKLING         |   N
-    pass
+    with open('json_response.txt', 'w+', encoding='utf-8'):
+        # used to create fresh text file before continuing
+        pass
+    mv_searches = cur.execute(f"SELECT artist, songs FROM y{chosen_year_q}").fetchall()
+    with open('raw_response.txt', 'w+', encoding='utf-8') as f:
+        for mv_res in mv_searches:
+            artist = mv_res[0]
+            song = mv_res[1]
+            print(f'{song} {artist}')
+            request = youtube.search().list(
+                part='snippet',
+                q=f'{mv_res} {artist}',
+                maxResults=5,
+                order='relevance',
+                type='video'
+            )
+            response = request.execute()
+            f.write(f'{response}\n\n')
+            format_response = convert_human_readable(response)
+            with open('format_response.txt', 'a', encoding='utf-8') as jf:
+                jf.write(f'{format_response}\n\n')
+
+
+def convert_human_readable(data, indent=0):
+    formatted_output = ""
+    for key, value in data.items():
+        if isinstance(value, dict):
+            formatted_output += "  " * indent + f"{key}:\n"
+            formatted_output += convert_human_readable(value, indent + 1)
+        elif isinstance(value, list):
+            formatted_output += "  " * indent + f"{key}:\n"
+            for item in value:
+                if 'kind' in item and item['kind'] == 'youtube#searchResult':
+                    formatted_output += "\n\n"
+                formatted_output += convert_human_readable(item, indent + 1)
+        else:
+            formatted_output += "  " * indent + f"{key}: {value}\n"
+    return formatted_output
+
+
+# add function to verify channel is legit. if it is not found in verified_channels.db then ask if it should be
+# verified or not. This will add a 0 (no) or 1 (yes) tag to a "mvverified" column in the original database
 
 
 if __name__ == '__main__':
     chosen_year_q = input('Year to get data for (format: YYYY e.g 2024): ')
-    # chosen_year = int(site_year)
-
+    # # PROBABLY NOT NEEDED: # chosen_year = int(site_year)
+    #
     kp_db, cur = db_init(chosen_year_q)
     kp_db.commit()
-    # Setup geckodriver (Firefox)
-    options = Options()
-    options.headless = False
-    geckodriver_path = 'drivers/geckodriver.exe'
-    service = Service(executable_path=geckodriver_path)
-    driver = webdriver.Firefox(options=options, service=service)
-    main(chosen_year_q)
-    # music_video()
-    driver.quit()
+    # # Setup geckodriver (Firefox)
+    # options = Options()
+    # options.headless = False
+    # geckodriver_path = 'drivers/geckodriver.exe'
+    # service = Service(executable_path=geckodriver_path)
+    # driver = webdriver.Firefox(options=options, service=service)
+    # main(chosen_year_q)
+    music_video()
+    # driver.quit()

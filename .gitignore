@@ -1,5 +1,7 @@
 *.sns
+.idea
 main/kp_albums.db
+
 
 keys.txt
 main/*.txt

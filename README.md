@@ -7,6 +7,8 @@ Katabase is used to list artists, albums and songs released by K-pop artists by 
 
 ## Creating a YouTube API key 
 
+You can follow the instructions below, or follow this link: https://developers.google.com/youtube/v3/getting-started - you will **not** need to setup oAuth. This project only requires the API key.
+
 This key only needs to be able to search YouTube and receive a response with the search data.
 
 Go to Google Cloud (https://console.cloud.google.com/) and create an account if required, then create a new project. I have called mine KATABASE. 

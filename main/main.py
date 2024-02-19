@@ -10,6 +10,7 @@ from selenium.common.exceptions import NoSuchElementException, TimeoutException
 import re
 import time
 import sqlite3
+import sys
 # YouTube API
 import json
 import googleapiclient.discovery
@@ -25,16 +26,20 @@ youtube = googleapiclient.discovery.build(
     api_service_name, api_version, developerKey=API_KEY)
 
 
+# Create a list for channel ID's
+cid_list = []
+
+
 def db_init(chosen_year):
     con = sqlite3.connect('kp_albums.db')
     cur = con.cursor()
-    #try:
+    # try:
     #    cur.execute(f'DROP TABLE IF EXISTS y{chosen_year}')
-    #except sqlite3.OperationalError:
+    # except sqlite3.OperationalError:
     #    pass
     print(f'y{chosen_year}')
-    #cur.execute(f"CREATE TABLE y{chosen_year}(artist, album, songs, url, mv, mvverified)")
-    #con.commit()
+    # cur.execute(f"CREATE TABLE y{chosen_year}(artist, album, songs, url, mv, mvverified)")
+    # con.commit()
     return con, cur
 
 
@@ -105,7 +110,7 @@ def main(kpop_year):
                 no_album = 'N/A'
                 no_song = 'N/A'
                 cur.execute(f"INSERT INTO y{chosen_year_q} (artist,album,songs) VALUES (?,?,?)", (artist, no_album,
-                                                                                                    no_song))
+                                                                                                  no_song))
                 kp_db.commit()
 
 
@@ -153,6 +158,7 @@ def music_video():
             format_response = convert_human_readable(response)
             with open('format_response.txt', 'a', encoding='utf-8') as jf:
                 jf.write(f'{format_response}\n\n')
+            mv_database(format_response, song, artist)
 
 
 def convert_human_readable(data, indent=0):
@@ -172,6 +178,69 @@ def convert_human_readable(data, indent=0):
     return formatted_output
 
 
+def mv_database(api_response, song, artist):
+
+    # parse api_response into variables
+    lines = api_response.split('\n')
+    # vid_lines=video, vname_lines=vname, song=song, artist=artist, cname_lines=channel, cid_lines=cid
+    vid_lines = [line.split(':')[1].strip() for line in lines if 'videoId' in line]
+    cid_lines = [line.split(':')[1].strip() for line in lines if 'channelId' in line]
+    vname_lines = [line.split(':')[1].strip() for line in lines if 'title' in line]
+    cname_lines = [line.split(':')[1].strip() for line in lines if 'channelTitle' in line]
+    # check if video is already in database using video id
+    for vid, cid, vname, cname in zip(vid_lines, cid_lines, vname_lines, cname_lines):
+        mv_exist = cur.execute("""SELECT video FROM mv WHERE video=?""", (vid,)).fetchone()
+        cid_list.append(cid)
+        if mv_exist:
+            print(f'Video with ID {vid} already exists in database. Skipping {song} by {artist}')
+        else:
+            cur.execute("""INSERT INTO mv (video, title, song, artist, channel_title, channel_id, verified)
+            VALUES (?, ?, ?, ?, ?, ?, ?)""", (vid, vname, song, artist, cname, cid, 'tbc',))
+            print(f'Video with ID {vid} and name {vname} added to database')
+
+
+def channel_verified():
+    for i in cid_list:
+        driver.get(f'www.youtube.com/channel/{i}')
+        try:
+            driver.find_element(By.CSS_SELECTOR, 'ytd-channel-name.ytd-c4-tabbed-header-renderer > '
+                                                 'ytd-badge-supported-renderer:nth-child(2) > '
+                                                 'div:nth-child(1) > '
+                                                 'yt-icon:nth-child(1) > yt-icon-shape:nth-child(1)')
+            return 1
+        except NoSuchElementException:
+            return 2
+    for i in cid_list:
+        # Check if manual verification is required
+        ver_value = cur.execute("""SELECT verified FROM mv WHERE cid=?""", (i,)).fetchone()
+        if ver_value == 2:
+            manual_verify(i)
+        else:
+            pass
+
+
+def manual_verify(cid):
+    do_manual_verify = ('The script has complete. There are some videos uploaded by channels without a \n'
+                        'verification tick. Would you like to iterate through the list to manually verify these \n'
+                        'channels? NOTE: This is used to help pick out a channel that would upload the correct \n'
+                        'video and not a fan made video. (Y/N): ')
+    if do_manual_verify.casefold() == 'y':
+        for i in cid:
+            pass
+    elif do_manual_verify.casefold() == 'n':
+        print('No problem, if you change your mind you can manually open the "kp_albums.db" database and open the\n'
+              '"mv" table and change the value in the "verified" column to a 1 for verified, 0 for not.')
+        time.sleep(1)
+        print('Cleaning up..')
+        time.sleep(2)
+        print('Exiting script..')
+        time.sleep(1)
+        driver.quit()
+        sys.exit()
+    else:
+        print('Input not recognised. Expected result either: Y or N\nPlease try again..\n\n')
+        manual_verify(cid)
+
 # add function to verify channel is legit. if it is not found in verified_channels.db then ask if it should be
 # verified or not. This will add a 0 (no) or 1 (yes) tag to a "mvverified" column in the original database
 
@@ -182,12 +251,22 @@ if __name__ == '__main__':
     #
     kp_db, cur = db_init(chosen_year_q)
     kp_db.commit()
+    try:
+        # vname = video name, cid = channel id
+        cur.execute(f"CREATE TABLE mv(video, vname, song, artist, channel, cid, verified)")
+        kp_db.commit()
+    except sqlite3.OperationalError:
+        pass
     # # Setup geckodriver (Firefox)
     # options = Options()
     # options.headless = False
     # geckodriver_path = 'geckodriver.exe'
     # service = Service(executable_path=geckodriver_path)
     # driver = webdriver.Firefox(options=options, service=service)
+    print(f'Checking kpopping list for year {chosen_year_q}..')
     # main(chosen_year_q)
+    print('List created. Checking music videos..')
     music_video()
+    print('Data grab complete. Checking channel verification status..')
+    channel_verified()
     # driver.quit()

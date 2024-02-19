@@ -149,7 +149,7 @@ def music_video():
             request = youtube.search().list(
                 part='snippet',
                 q=f'{mv_res} {artist}',
-                maxResults=5,
+                maxResults=10,
                 order='relevance',
                 type='video'
             )
@@ -179,7 +179,6 @@ def convert_human_readable(data, indent=0):
 
 
 def mv_database(api_response, song, artist):
-
     # parse api_response into variables
     lines = api_response.split('\n')
     # vid_lines=video, vname_lines=vname, song=song, artist=artist, cname_lines=channel, cid_lines=cid
@@ -187,29 +186,56 @@ def mv_database(api_response, song, artist):
     cid_lines = [line.split(':')[1].strip() for line in lines if 'channelId' in line]
     vname_lines = [line.split(':')[1].strip() for line in lines if 'title' in line]
     cname_lines = [line.split(':')[1].strip() for line in lines if 'channelTitle' in line]
+    year_check = [line.split(':')[1].strip() for line in lines if 'publishedAt' in line]
     # check if video is already in database using video id
-    for vid, cid, vname, cname in zip(vid_lines, cid_lines, vname_lines, cname_lines):
+    for vid, cid, vname, cname, eyear in zip(vid_lines, cid_lines, vname_lines, cname_lines, year_check):
         mv_exist = cur.execute("""SELECT video FROM mv WHERE video=?""", (vid,)).fetchone()
         cid_list.append(cid)
         if mv_exist:
             print(f'Video with ID {vid} already exists in database. Skipping {song} by {artist}')
         else:
-            cur.execute("""INSERT INTO mv (video, title, song, artist, channel_title, channel_id, verified)
-            VALUES (?, ?, ?, ?, ?, ?, ?)""", (vid, vname, song, artist, cname, cid, 'tbc',))
-            print(f'Video with ID {vid} and name {vname} added to database')
+            print(f'[DEBUG] EXTRACTED YEAR = {eyear}\nCHOSEN YEAR = {chosen_year_q}')
+            if eyear[:4] == chosen_year_q:
+                cur.execute("""INSERT INTO mv (video, vname, song, artist, channel, cid, verified)
+                VALUES (?, ?, ?, ?, ?, ?, ?)""", (vid, vname, song, artist, cname, cid, 'tbc',))
+                print(f'Video with ID {vid} and name {vname} added to database')
+            else:
+                print(f'Video uploaded in wrong year: {eyear}. Skipping this video..')
+                continue
+    kp_db.commit()
 
 
 def channel_verified():
     for i in cid_list:
-        driver.get(f'www.youtube.com/channel/{i}')
+        driver.get(f'https://www.youtube.com/channel/{i}')
+        # check for "before you continue" screen
         try:
-            driver.find_element(By.CSS_SELECTOR, 'ytd-channel-name.ytd-c4-tabbed-header-renderer > '
-                                                 'ytd-badge-supported-renderer:nth-child(2) > '
-                                                 'div:nth-child(1) > '
-                                                 'yt-icon:nth-child(1) > yt-icon-shape:nth-child(1)')
-            return 1
+            driver.find_element(By.CSS_SELECTOR, '.jL1IVc')
+            driver.find_element(By.CSS_SELECTOR, '.KZ9vpc > form:nth-child(3) > div:nth-child(1) > '
+                                                 'div:nth-child(1) > button:nth-child(1) > span:nth-child(4)').click()
+            try:
+                driver.find_element(By.CSS_SELECTOR, 'ytd-channel-name.ytd-c4-tabbed-header-renderer > '
+                                                     'ytd-badge-supported-renderer:nth-child(2) > '
+                                                     'div:nth-child(1) > '
+                                                     'yt-icon:nth-child(1) > yt-icon-shape:nth-child(1)')
+                print(f'{i} is Verified')
+                return 1
+            except NoSuchElementException:
+                print(f'{i} is NOT verified')
+                return 2
+
         except NoSuchElementException:
-            return 2
+            try:
+                driver.find_element(By.CSS_SELECTOR, 'ytd-channel-name.ytd-c4-tabbed-header-renderer > '
+                                                     'ytd-badge-supported-renderer:nth-child(2) > '
+                                                     'div:nth-child(1) > '
+                                                     'yt-icon:nth-child(1) > yt-icon-shape:nth-child(1)')
+                print(f'{i} is Verified')
+                return 1
+            except NoSuchElementException:
+                print(f'{i} is NOT verified')
+                return 2
+    ##### THIS CURRENTLY ONLY VERIFIES ONE CHANNEL NOT ALL CHANNELS. INVESTIGATE
     for i in cid_list:
         # Check if manual verification is required
         ver_value = cur.execute("""SELECT verified FROM mv WHERE cid=?""", (i,)).fetchone()
@@ -225,8 +251,17 @@ def manual_verify(cid):
                         'channels? NOTE: This is used to help pick out a channel that would upload the correct \n'
                         'video and not a fan made video. (Y/N): ')
     if do_manual_verify.casefold() == 'y':
+        print('Please answer questions with either a Y for yes or an N for no: ')
         for i in cid:
-            pass
+            channel_name = cur.execute("""SELECT cname FROM mv WHERE cid=?""", (i,)).fetchone()
+            yes_channel = input(f'Should {channel_name} (www.youtube.com/channel/{cid}) be verified (Y/N)?:')
+            if yes_channel.casefold() == 'y':
+                cur.execute("""UPDATE mv SET verified=1 WHERE cid=?""", (cid,))
+            elif yes_channel.casefold() == 'n':
+                cur.execute("""UPDATE mv SET verified=0 WHERE cid=?""", (cid,))
+            else:
+                print('Input invalid. You will need to manually change this in the database or re-run script.')
+                cur.execute("""UPDATE mv SET verified=2 WHERE cid=?""", (cid,))
     elif do_manual_verify.casefold() == 'n':
         print('No problem, if you change your mind you can manually open the "kp_albums.db" database and open the\n'
               '"mv" table and change the value in the "verified" column to a 1 for verified, 0 for not.')
@@ -257,12 +292,12 @@ if __name__ == '__main__':
         kp_db.commit()
     except sqlite3.OperationalError:
         pass
-    # # Setup geckodriver (Firefox)
-    # options = Options()
-    # options.headless = False
-    # geckodriver_path = 'geckodriver.exe'
-    # service = Service(executable_path=geckodriver_path)
-    # driver = webdriver.Firefox(options=options, service=service)
+    # Setup geckodriver (Firefox)
+    options = Options()
+    options.headless = False
+    geckodriver_path = 'geckodriver.exe'
+    service = Service(executable_path=geckodriver_path)
+    driver = webdriver.Firefox(options=options, service=service)
     print(f'Checking kpopping list for year {chosen_year_q}..')
     # main(chosen_year_q)
     print('List created. Checking music videos..')

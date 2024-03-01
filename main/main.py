@@ -1,16 +1,20 @@
-# functions to set up/initialise selenium
+# Selenium imports
 from selenium import webdriver
 from selenium.webdriver.firefox.options import Options
 from selenium.webdriver.firefox.service import Service
-# functions used within selenium
 from selenium.webdriver.common.by import By
-# selenium exceptions
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as ec
 from selenium.common.exceptions import NoSuchElementException, TimeoutException
 # other tools
 import re
 import time
 import sqlite3
 import sys
+# Used for checking YouTube verification
+import requests
+from bs4 import BeautifulSoup
+from lxml import etree
 # YouTube API
 import json
 import googleapiclient.discovery
@@ -206,36 +210,21 @@ def mv_database(api_response, song, artist):
 
 
 def channel_verified():
+    run_number = 0
     for i in cid_list:
-        driver.get(f'https://www.youtube.com/channel/{i}')
-        # check for "before you continue" screen
-        try:
-            driver.find_element(By.CSS_SELECTOR, '.jL1IVc')
-            driver.find_element(By.CSS_SELECTOR, '.KZ9vpc > form:nth-child(3) > div:nth-child(1) > '
-                                                 'div:nth-child(1) > button:nth-child(1) > span:nth-child(4)').click()
-            try:
-                driver.find_element(By.CSS_SELECTOR, 'ytd-channel-name.ytd-c4-tabbed-header-renderer > '
-                                                     'ytd-badge-supported-renderer:nth-child(2) > '
-                                                     'div:nth-child(1) > '
-                                                     'yt-icon:nth-child(1) > yt-icon-shape:nth-child(1)')
-                print(f'{i} is Verified')
-                return 1
-            except NoSuchElementException:
-                print(f'{i} is NOT verified')
-                return 2
-
-        except NoSuchElementException:
-            try:
-                driver.find_element(By.CSS_SELECTOR, 'ytd-channel-name.ytd-c4-tabbed-header-renderer > '
-                                                     'ytd-badge-supported-renderer:nth-child(2) > '
-                                                     'div:nth-child(1) > '
-                                                     'yt-icon:nth-child(1) > yt-icon-shape:nth-child(1)')
-                print(f'{i} is Verified')
-                return 1
-            except NoSuchElementException:
-                print(f'{i} is NOT verified')
-                return 2
-    ##### THIS CURRENTLY ONLY VERIFIES ONE CHANNEL NOT ALL CHANNELS. INVESTIGATE
+        is_verified = cur.execute("""SELECT verified FROM mv WHERE cid=?""", (i,)).fetchone()
+        if is_verified == 'tbc':
+            run_number += 1
+            format_url = f'https://www.youtube.com/channel/{i}'
+            if verify_element_exist(format_url, run_number):
+                print(f'{format_url} IS VERIFIED')
+                cur.execute("""UPDATE mv SET verified = 1 WHERE cid=?""", (i,))
+            else:
+                print(f'{format_url} IS NOT VERIFIED')
+                cur.execute("""UPDATE mv SET verified = 0 WHERE cid=?""", (i,))
+        else:
+            continue
+    kp_db.commit()
     for i in cid_list:
         # Check if manual verification is required
         ver_value = cur.execute("""SELECT verified FROM mv WHERE cid=?""", (i,)).fetchone()
@@ -244,6 +233,71 @@ def channel_verified():
         else:
             pass
 
+
+def verify_element_exist(url, run_number):
+    # CSS Selector
+    verified_badge = ('ytd-channel-name.ytd-c4-tabbed-header-renderer > ytd-badge-supported-renderer:nth-child(2) '
+                      '> div:nth-child(1) > yt-icon:nth-child(1) > yt-icon-shape:nth-child(1) > icon-shape:nth-child(1)'
+                      ' > div:nth-child(1)')
+    # CSS Selector
+    artist_badge = ('ytd-channel-name.ytd-c4-tabbed-header-renderer > ytd-badge-supported-renderer:nth-child(2) '
+                    '> div:nth-child(1) > yt-icon:nth-child(1) > yt-icon-shape:nth-child(1) > icon-shape:nth-child(1) '
+                    '> div:nth-child(1) > svg:nth-child(1)')
+    # SELENIUM LOAD YOUTUBE
+    # check if elements exist (to see if cookies page or not)
+    # cookie_accept appears if you open the YouTube main page. keeping in code for now in case it crops up again
+    cookie_accept = ('ytd-button-renderer.ytd-consent-bump-v2-lightbox:nth-child(2) > yt-button-shape:nth-child(1) '
+                     '> button:nth-child(1) > yt-touch-feedback-shape:nth-child(2) > div:nth-child(1) > '
+                     'div:nth-child(2)')
+    cookie_accept_2 = ('.KZ9vpc > form:nth-child(3) > div:nth-child(1) > div:nth-child(1) > '
+                       'button:nth-child(1) > span:nth-child(4)')
+    driver.get(url)
+    if run_number == 1:
+        try:
+            WebDriverWait(driver, 10).until(ec.presence_of_element_located((By.CSS_SELECTOR, cookie_accept_2)))
+            driver.find_element(By.CSS_SELECTOR, cookie_accept_2).click()
+        except NoSuchElementException:
+            try:
+                driver.find_element(By.CSS_SELECTOR, 'input.ytd-searchbox').click()
+            except NoSuchElementException:
+                print('Failed to load page. Exiting..')
+                driver.quit()
+                sys.exit()
+    else:
+        pass
+    if driver.find_elements(By.CSS_SELECTOR, artist_badge) or driver.find_elements(By.CSS_SELECTOR, verified_badge):
+        print('VERIFIED')
+        return True
+    else:
+        time.sleep(5)
+        if driver.find_elements(By.CSS_SELECTOR, artist_badge) or driver.find_elements(By.CSS_SELECTOR, verified_badge):
+            print('VERIFIED')
+            return True
+        else:
+            print('NOT VERIFIED')
+            return False
+
+    # cookies_page = '.jL1IVc'
+    # response = requests.get(url, cookies={'CONSENT': 'PENDING+999'})
+    # if response.status_code == 200:
+    #     soup = BeautifulSoup(response.text, 'html.parser')
+    #     v_badge_search = soup.find(verified_badge)
+    #     a_badge_search = soup.find(artist_badge)
+    #     if v_badge_search is not None:
+    #         print('VERIFIED BADGE IS ACTIVE')
+    #     elif v_badge_search is None:
+    #         print('verified_badge is inactive: ')
+    #     else:
+    #         print('Error with verified badge search')
+    #
+    #     if a_badge_search is not None:
+    #         print('VERIFIED BADGE IS ACTIVE')
+    #     elif a_badge_search is None:
+    #         print('verified_badge is inactive: ')
+    #     else:
+    #         print('Error with official artist badge search')
+    # else:
+    #     print(f'Failed to fetch {url}: {response.status_code}')
 
 def manual_verify(cid):
     do_manual_verify = ('The script has complete. There are some videos uploaded by channels without a \n'
@@ -282,6 +336,7 @@ def manual_verify(cid):
 
 if __name__ == '__main__':
     chosen_year_q = input('Year to get data for (format: YYYY e.g 2024): ')
+    print('Loading database..')
     # # PROBABLY NOT NEEDED: # chosen_year = int(site_year)
     #
     kp_db, cur = db_init(chosen_year_q)
@@ -293,6 +348,7 @@ if __name__ == '__main__':
     except sqlite3.OperationalError:
         pass
     # Setup geckodriver (Firefox)
+    print('Launching Firefox via Geckodriver in HEADLESS mode..')
     options = Options()
     options.headless = False
     geckodriver_path = 'geckodriver.exe'
@@ -302,6 +358,8 @@ if __name__ == '__main__':
     # main(chosen_year_q)
     print('List created. Checking music videos..')
     music_video()
-    print('Data grab complete. Checking channel verification status..')
+    print('Data grab complete. Checking channel verification status.. (May take a while.. '
+          'Approx. 6-7 seconds per video)')
+    code_timer_start = time.time()
     channel_verified()
-    # driver.quit()
+    driver.quit()

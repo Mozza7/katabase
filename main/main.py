@@ -11,10 +11,6 @@ import re
 import time
 import sqlite3
 import sys
-# Used for checking YouTube verification
-import requests
-from bs4 import BeautifulSoup
-from lxml import etree
 # YouTube API
 import json
 import googleapiclient.discovery
@@ -277,27 +273,6 @@ def verify_element_exist(url, run_number):
             print('NOT VERIFIED')
             return False
 
-    # cookies_page = '.jL1IVc'
-    # response = requests.get(url, cookies={'CONSENT': 'PENDING+999'})
-    # if response.status_code == 200:
-    #     soup = BeautifulSoup(response.text, 'html.parser')
-    #     v_badge_search = soup.find(verified_badge)
-    #     a_badge_search = soup.find(artist_badge)
-    #     if v_badge_search is not None:
-    #         print('VERIFIED BADGE IS ACTIVE')
-    #     elif v_badge_search is None:
-    #         print('verified_badge is inactive: ')
-    #     else:
-    #         print('Error with verified badge search')
-    #
-    #     if a_badge_search is not None:
-    #         print('VERIFIED BADGE IS ACTIVE')
-    #     elif a_badge_search is None:
-    #         print('verified_badge is inactive: ')
-    #     else:
-    #         print('Error with official artist badge search')
-    # else:
-    #     print(f'Failed to fetch {url}: {response.status_code}')
 
 def manual_verify(cid):
     do_manual_verify = ('The script has complete. There are some videos uploaded by channels without a \n'

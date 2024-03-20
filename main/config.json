@@ -1,5 +1,5 @@
 {
 	"API_KEY": "your_api_key"
-	"API_KEY_2": "second_api_key_optional"
-	"API_KEY_3": "third_api_key_optional"
+	"API_KEY_2": "additional_api_key_optional"
+	"API_KEY_3": "additional_api_key_optional"
 }

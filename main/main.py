@@ -15,7 +15,6 @@ import sys
 import json
 import googleapiclient.discovery
 
-
 # API info
 api_service_name = 'youtube'
 api_version = 'v3'
@@ -24,7 +23,6 @@ with open('config.json') as f:
 API_KEY = config['API_KEY']
 youtube = googleapiclient.discovery.build(
     api_service_name, api_version, developerKey=API_KEY)
-
 
 # Create a list for channel ID's
 cid_list = []
@@ -91,7 +89,7 @@ def main(kpop_year):
                         break
                     except TimeoutException:
                         if attempt == 6:
-                            print('TIMEOUT. 6 ATTEMPTS MADE OVER 3 MINUTES.')
+                            print('TIMEDOUT. 6 ATTEMPTS MADE OVER 3 MINUTES.')
                             driver.quit()
                             quit()
             try:
@@ -193,16 +191,57 @@ def mv_database(api_response, song, artist):
         cid_list.append(cid)
         if mv_exist:
             print(f'Video with ID {vid} already exists in database. Skipping {song} by {artist}')
+            video_type(vname, vid)
         else:
             print(f'[DEBUG] EXTRACTED YEAR = {eyear}\nCHOSEN YEAR = {chosen_year_q}')
             if eyear[:4] == chosen_year_q:
                 cur.execute("""INSERT INTO mv (video, vname, song, artist, channel, cid, verified)
                 VALUES (?, ?, ?, ?, ?, ?, ?)""", (vid, vname, song, artist, cname, cid, 'tbc',))
                 print(f'Video with ID {vid} and name {vname} added to database')
+                video_type(vname, vid)
             else:
                 print(f'Video uploaded in wrong year: {eyear}. Skipping this video..')
                 continue
     kp_db.commit()
+
+
+def video_type(vid, yt_id):
+    teaser_words = ['teaser', 'teaser video', 'spoiler', 'highlight medley']
+    reaction_words = ['reaction']
+    mv_words = ['mv', 'music video', 'm/v', '뮤비', 'official video']
+    dance_words = ['dance', 'practice', '춤', '관행', '춤 연습', '나 춤 연습해']
+    perf_words = ['performance', 'stage', 'live', 'inkigayo', "[it's Live]", '[BE ORIGINAL]', '1theKILLPO']
+    lyric_words = ['lyric', 'color coded', 'lyrics', 'line distribution', '가사']
+    youtube_link = f'https://www.youtube.com/watch?v={yt_id}'
+
+    if check_string_for_phrases(vid, teaser_words):
+        cur.execute("""INSERT INTO video_type (name, vid_id, vid_type) VALUES (?, ?, ?)""",
+                    (vid, youtube_link, 'teaser'))
+    elif check_string_for_phrases(vid, reaction_words):
+        cur.execute("""INSERT INTO video_type (name, vid_id, vid_type) VALUES (?, ?, ?)""",
+                    (vid, youtube_link, 'reaction'))
+    elif check_string_for_phrases(vid, mv_words):
+        cur.execute("""INSERT INTO video_type (name, vid_id, vid_type) VALUES (?, ?, ?)""",
+                    (vid, youtube_link, 'mv'))
+    elif check_string_for_phrases(vid, dance_words):
+        cur.execute("""INSERT INTO video_type (name, vid_id, vid_type) VALUES (?, ?, ?)""",
+                    (vid, youtube_link, 'dance'))
+    elif check_string_for_phrases(vid, perf_words):
+        cur.execute("""INSERT INTO video_type (name, vid_id, vid_type) VALUES (?, ?, ?)""",
+                    (vid, youtube_link, 'performance'))
+    elif check_string_for_phrases(vid, lyric_words):
+        cur.execute("""INSERT INTO video_type (name, vid_id, vid_type) VALUES (?, ?, ?)""",
+                    (vid, youtube_link, 'lyric'))
+    else:
+        cur.execute("""INSERT INTO video_type (name, vid_id, vid_type) VALUES (?, ?, ?)""",
+                    (vid, youtube_link, 'other'))
+
+
+def check_string_for_phrases(input_string, target_phrases):
+    for phrase in target_phrases:
+        if re.search(r'\b' + re.escape(phrase) + r'\b', input_string, flags=re.IGNORECASE):
+            return True
+    return False
 
 
 def channel_verified():
@@ -305,6 +344,7 @@ def manual_verify(cid):
         print('Input not recognised. Expected result either: Y or N\nPlease try again..\n\n')
         manual_verify(cid)
 
+
 # add function to verify channel is legit. if it is not found in verified_channels.db then ask if it should be
 # verified or not. This will add a 0 (no) or 1 (yes) tag to a "mvverified" column in the original database
 
@@ -322,6 +362,11 @@ if __name__ == '__main__':
         kp_db.commit()
     except sqlite3.OperationalError:
         pass
+    cur.execute("DROP TABLE IF EXISTS video_type")
+    kp_db.commit()
+    cur.execute(f"CREATE TABLE video_type(name, vid_id, vid_type)")
+    kp_db.commit()
+
     # Setup geckodriver (Firefox)
     print('Launching Firefox via Geckodriver in HEADLESS mode..')
     options = Options()

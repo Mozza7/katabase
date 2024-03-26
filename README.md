@@ -45,3 +45,5 @@ You can now add this to config.json, replacing "your_api_key".
 IF POSSIBLE, it is recommended to restrict your API key to your IP address. This is only really viable if your ISP has granted you a static IP address. To restrict this, on the Credentials page click the 3 vertical elipses under "Actions" and select "Edit API key". Under "Set an application restriction" select "IP addresses" and add your IP address under "IP address restrictions". Ensure "Don't restrict key" is enabled - do not restrict the key here. Click SAVE.
 
 If you cannot restrict your API key this is no problem, this is just to avoid someone else using your API key if it is found.
+
+You may add multiple API keys from different projects to bypass the 10,000 request per day quota.

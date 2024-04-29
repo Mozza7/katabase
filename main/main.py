@@ -1,4 +1,7 @@
 # Selenium imports
+import glob
+import os
+
 from selenium import webdriver
 from selenium.webdriver.firefox.options import Options
 from selenium.webdriver.firefox.service import Service
@@ -25,6 +28,9 @@ import googleapiclient.errors as google_error
 import xlsxwriter
 import datetime
 import time
+
+from pytube import Search as ytSearch
+from pytube import YouTube, Channel
 
 transliter = Transliter(academic)
 
@@ -205,143 +211,51 @@ def translate_symbol(s):
 
 
 def music_video():
-    attempt_number = 0
-    max_api = range(1, 20)
-    api_raw = generate_api_config(max_api)
-    api_key = api_config(attempt_number, api_raw)
-    youtube = googleapiclient.discovery.build(
-        api_service_name, api_version, developerKey=api_key)
-    with open('json_response.txt', 'w+', encoding='utf-8'):
-        # used to create fresh text file before continuing
-        pass
     mv_searches = cur.execute(f"SELECT artist, songs FROM y{chosen_year_q}").fetchall()
-    with open('raw_response.txt', 'w+', encoding='utf-8') as f:
+    with open('format_response.txt', 'w+'):
+        pass  # removes existing file
+    with open('yt_response.txt', 'w+', encoding='utf-8') as f:
+        searchid = 0
         for mv_res in mv_searches:
-            artist = mv_res[0]
-            song = mv_res[1]
-            print(f'{song} {artist}')
-            request = youtube.search().list(
-                part='snippet',
-                q=f'{mv_res} {artist}',
-                maxResults=10,
-                order='relevance',
-                type='video'
-            )
-            while True:
-                try:
-                    response = api_response(request)
-                    break
-                except google_error.HttpError:
-                    attempt_number += 1
-                    api_key = api_config(attempt_number, api_raw)
-                    youtube = googleapiclient.discovery.build(
-                        api_service_name, api_version, developerKey=api_key)
-                    try:
-                        request = youtube.search().list(
-                            part='snippet',
-                            q=f'{mv_res} {artist}',
-                            maxResults=10,
-                            order='relevance',
-                            type='video'
-                        )
-                        if api_key == 0:
-                            print('No more API keys available.. Waiting until quota reset')
-                            response = quota_wait(request)
-                        else:
-                            response = api_response(request)
-                        break
-                    except google_error.HttpError:
-                        attempt_number += 1
-                        api_key = api_config(attempt_number, api_raw)
-                        youtube = googleapiclient.discovery.build(
-                            api_service_name, api_version, developerKey=api_key)
-                    request = youtube.search().list(
-                        part='snippet',
-                        q=f'{mv_res} {artist}',
-                        maxResults=10,
-                        order='relevance',
-                        type='video'
-                    )
-                    if api_key == 0:
-                        print('No more API keys available.. Waiting until quota reset')
-                        response = quota_wait(request)
-                    else:
-                        response = quota_wait(request)
-                    break
-
-            f.write(f'{response}\n\n')
-            format_response = convert_human_readable(response)
-            with open('format_response.txt', 'a', encoding='utf-8') as jf:
-                jf.write(f'{format_response}\n\n')
-            mv_database(format_response, song, artist)
+            with open(f'response_files/format_response{searchid}.txt', 'w+', encoding='utf-8') as jf:
+                artist = mv_res[0]
+                song = mv_res[1]
+                print(f'{song} {artist}')
+                search_term = f'{mv_res} {artist}'
+                search_result = ytSearch(search_term).results
+                x = 0
+                for i in search_result:
+                    i = str(i)
+                    if x < 11:
+                        start_index = i.find("videoId=") + len("videoId=")
+                        end_index = i.find(">", start_index)
+                        video_id = i[start_index:end_index]
+                        search_id = f'https://www.youtube.com/watch?v={video_id}'
+                        cid_line = YouTube(search_id).channel_id
+                        channel_user = YouTube(search_id).channel_url
+                        start_index = channel_user.find("@") + len("@")
+                        channel_name = channel_user[start_index:]
+                        upload_date_in = YouTube(search_id)
+                        upload_date = upload_date_in.publish_date.year
+                        vname_line = YouTube(search_id).title
+                        print(video_id)
+                        jf.write(f'video_id:{video_id}\nchannel_id:{cid_line}\nvideo_name:{vname_line}\nchannel_'
+                                 f'name:{channel_name}\nupload_year:{upload_date}\n[debug]search_term:{search_term}\n\n')
+                        x += 1
+                        f.write(f'{video_id}\n\n')
+                mv_database(filename=f'response_files/format_response{searchid}.txt', song=song, artist=artist) # doesnt seem to work at this time
+                searchid += 1
 
 
-def generate_api_config(max_api):
-    api_dict = {}
-    for i in max_api:
-        api_dict[f'api_{i}'] = f'API_KEY_{i}'
-    return api_dict
-
-
-def api_config(key_number, api_dict):
-    key_number += 1
-    print(key_number)
-    api_raw = api_dict[f'api_{key_number}']
-    try:
-        api_key = config[api_raw]
-    except KeyError:
-        api_key = 0
-    return api_key
-
-
-def bypass_quota(key):
-    youtube = googleapiclient.discovery.build(
-        api_service_name, api_version, developerKey=key)
-    print(key)
-    return youtube
-
-
-def api_response(request):
-    response = request.execute()
-    return response
-
-
-def quota_wait(request):
-    now = datetime.datetime.now()
-    midnight = datetime.datetime(now.year, now.month, now.day) + datetime.timedelta(days=1)
-    time_until_midnight = midnight - now
-    print(f'Waiting until midnight UK/LONDON - {time_until_midnight.seconds} seconds')
-    time.sleep(time_until_midnight.seconds)
-    response = api_response(request)
-    return response
-
-
-def convert_human_readable(data, indent=0):
-    formatted_output = ""
-    for key, value in data.items():
-        if isinstance(value, dict):
-            formatted_output += "  " * indent + f"{key}:\n"
-            formatted_output += convert_human_readable(value, indent + 1)
-        elif isinstance(value, list):
-            formatted_output += "  " * indent + f"{key}:\n"
-            for item in value:
-                if 'kind' in item and item['kind'] == 'youtube#searchResult':
-                    formatted_output += "\n\n"
-                formatted_output += convert_human_readable(item, indent + 1)
-        else:
-            formatted_output += "  " * indent + f"{key}: {value}\n"
-    return formatted_output
-
-
-def mv_database(api_response, song, artist):
-    # parse api_response into variables
-    lines = api_response.split('\n')
-    # vid_lines=video, vname_lines=vname, song=song, artist=artist, cname_lines=channel, cid_lines=cid
-    vid_lines = [line.split(':')[1].strip() for line in lines if 'videoId' in line]
-    cid_lines = [line.split(':')[1].strip() for line in lines if 'channelId' in line]
-    vname_lines = [line.split(':')[1].strip() for line in lines if 'title' in line]
-    cname_lines = [line.split(':')[1].strip() for line in lines if 'channelTitle' in line]
-    year_check = [line.split(':')[1].strip() for line in lines if 'publishedAt' in line]
+def mv_database(filename, song, artist):
+    with open(filename, 'r', encoding='utf-8') as input_file:
+        lines = input_file.readlines()
+    print('mv_database')
+    vid_lines = [line.split(':')[1].strip() for line in lines if 'video_id' in line]
+    cid_lines = [line.split(':')[1].strip() for line in lines if 'channel_id' in line]
+    vname_lines = [line.split(':')[1].strip() for line in lines if 'video_name' in line]
+    cname_lines = [line.split(':')[1].strip() for line in lines if 'channel_name' in line]
+    year_check = [line.split(':')[1].strip() for line in lines if 'upload_year' in line]
     # check if video is already in database using video id
     for vid, cid, vname, cname, eyear in zip(vid_lines, cid_lines, vname_lines, cname_lines, year_check):
         mv_exist = cur.execute("""SELECT video FROM mv WHERE video=?""", (vid,)).fetchone()
@@ -370,7 +284,6 @@ def video_type(vid, yt_id):
     perf_words = ['performance', 'stage', 'live', 'inkigayo', "[it's Live]", '[BE ORIGINAL]', '1theKILLPO']
     lyric_words = ['lyric', 'color coded', 'lyrics', 'line distribution', '가사']
     youtube_link = f'https://www.youtube.com/watch?v={yt_id}'
-
     if check_string_for_phrases(vid, teaser_words):
         cur.execute("""INSERT INTO video_type (name, vid_id, vid_type) VALUES (?, ?, ?)""",
                     (vid, youtube_link, 'teaser'))
@@ -585,18 +498,21 @@ def output_excel():
 
 
 if __name__ == '__main__':
+    clean_files = glob.glob('response_files/*')
+    for i in clean_files:
+        os.remove(i)
     chosen_year_q = input('Year to get data for (format: YYYY e.g 2024): ')
     print('Loading database..')
     # # PROBABLY NOT NEEDED: # chosen_year = int(site_year)
     #
     kp_db, cur = db_init(chosen_year_q)
     kp_db.commit()
-    try:
-        # vname = video name, cid = channel id
-        cur.execute(f"CREATE TABLE mv(video, vname, song, artist, channel, cid, verified)")
-        kp_db.commit()
-    except sqlite3.OperationalError:
-        pass
+    #try:
+    #    # vname = video name, cid = channel id
+    #    cur.execute(f"CREATE TABLE mv(video, vname, song, artist, channel, cid, verified)")
+    #    kp_db.commit()
+    #except sqlite3.OperationalError:
+    #    pass
     #cur.execute("DROP TABLE IF EXISTS video_type")
     #kp_db.commit()
     #cur.execute(f"CREATE TABLE video_type(name, vid_id, vid_type)")
@@ -604,11 +520,11 @@ if __name__ == '__main__':
 
     # Setup geckodriver (Firefox)
     print('Launching Firefox via Geckodriver in HEADLESS mode..')
-    options = Options()
-    options.headless = False
-    geckodriver_path = 'geckodriver.exe'
-    service = Service(executable_path=geckodriver_path)
-    driver = webdriver.Firefox(options=options, service=service)
+    #options = Options()
+    #options.headless = False
+    #geckodriver_path = 'geckodriver.exe'
+    #service = Service(executable_path=geckodriver_path)
+    #driver = webdriver.Firefox(options=options, service=service)
     print(f'Checking kpopping list for year {chosen_year_q}..')
     #main(chosen_year_q)
     print('List created. Checking music videos..')

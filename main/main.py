@@ -1,7 +1,6 @@
 # Selenium imports
 import glob
 import os
-
 from selenium import webdriver
 from selenium.webdriver.firefox.options import Options
 from selenium.webdriver.firefox.service import Service
@@ -20,26 +19,18 @@ import re
 import time
 import sqlite3
 import sys
-# YouTube API
 import json
-import googleapiclient.discovery
-import googleapiclient.errors as google_error
 # Output to EXCEL
-import xlsxwriter
+import os
+import shutil
+from openpyxl import Workbook, load_workbook
 import datetime
 import time
-
+# PyTube instead of YouTube API
 from pytube import Search as ytSearch
 from pytube import YouTube, Channel
 
 transliter = Transliter(academic)
-
-# API info
-api_service_name = 'youtube'
-api_version = 'v3'
-with open('config.json') as f:
-    config = json.load(f)
-
 
 # Create a list for channel ID's
 cid_list = []
@@ -48,13 +39,17 @@ cid_list = []
 def db_init(chosen_year):
     con = sqlite3.connect('kp_albums.db')
     cur = con.cursor()
-   # try:
-   #     cur.execute(f'DROP TABLE IF EXISTS y{chosen_year}')
-   # except sqlite3.OperationalError:
-   #     pass
-    print(f'y{chosen_year}')
-   # cur.execute(f"CREATE TABLE y{chosen_year}(artist, album, songs, url, mv, mvverified)")
-   # con.commit()
+    #try:
+    #    cur.execute(f'DROP TABLE IF EXISTS y{chosen_year}')
+    #except sqlite3.OperationalError:
+    #    pass
+    #try:
+    #    cur.execute('DROP TABLE IF EXISTS mv')
+    #    cur.execute('CREATE TABLE mv(video, vname, song, artist, channel, cid, verified)')
+    #except sqlite3.OperationalError:
+    #    pass
+    #cur.execute(f"CREATE TABLE y{chosen_year}(artist, album, songs, url, mv, mvverified)")
+    #con.commit()
     return con, cur
 
 
@@ -212,62 +207,69 @@ def translate_symbol(s):
 
 def music_video():
     mv_searches = cur.execute(f"SELECT artist, songs FROM y{chosen_year_q}").fetchall()
-    with open('format_response.txt', 'w+'):
-        pass  # removes existing file
-    with open('yt_response.txt', 'w+', encoding='utf-8') as f:
-        searchid = 0
-        for mv_res in mv_searches:
-            with open(f'response_files/format_response{searchid}.txt', 'w+', encoding='utf-8') as jf:
-                artist = mv_res[0]
-                song = mv_res[1]
-                print(f'{song} {artist}')
-                search_term = f'{mv_res} {artist}'
-                search_result = ytSearch(search_term).results
-                x = 0
-                for i in search_result:
-                    i = str(i)
-                    if x < 11:
-                        start_index = i.find("videoId=") + len("videoId=")
-                        end_index = i.find(">", start_index)
-                        video_id = i[start_index:end_index]
-                        search_id = f'https://www.youtube.com/watch?v={video_id}'
-                        cid_line = YouTube(search_id).channel_id
-                        channel_user = YouTube(search_id).channel_url
-                        start_index = channel_user.find("@") + len("@")
-                        channel_name = channel_user[start_index:]
-                        upload_date_in = YouTube(search_id)
-                        upload_date = upload_date_in.publish_date.year
-                        vname_line = YouTube(search_id).title
-                        print(video_id)
-                        jf.write(f'video_id:{video_id}\nchannel_id:{cid_line}\nvideo_name:{vname_line}\nchannel_'
-                                 f'name:{channel_name}\nupload_year:{upload_date}\n[debug]search_term:{search_term}\n\n')
-                        x += 1
-                        f.write(f'{video_id}\n\n')
-                mv_database(filename=f'response_files/format_response{searchid}.txt', song=song, artist=artist) # doesnt seem to work at this time
-                searchid += 1
+    searchid = 0
+    for mv_res in mv_searches:
+        with open(f'response_files/format_response{searchid}.txt', 'w+', encoding='utf-8') as jf:
+            artist = mv_res[0]
+            song = mv_res[1]
+            print(f'{song} {artist}')
+            search_term = f'{mv_res} {artist}'
+            search_result = ytSearch(search_term).results
+            x = 0
+            for i in search_result:
+                i = str(i)
+                if x < 11:
+                    start_index = i.find("videoId=") + len("videoId=")
+                    end_index = i.find(">", start_index)
+                    video_id = i[start_index:end_index]
+                    search_id = f'https://www.youtube.com/watch?v={video_id}'
+                    youtube_return = YouTube(search_id)
+                    cid_line = youtube_return.channel_id
+                    channel_user = youtube_return.channel_url
+                    start_index = channel_user.find("@") + len("@")
+                    channel_name = channel_user[start_index:]
+                    upload_date = youtube_return.publish_date.year
+                    vname_line = youtube_return.title
+                    print(video_id)
+                    jf.write(f'video_id:{video_id}\nchannel_id:{cid_line}\nvideo_name:{vname_line}\nchannel_'
+                             f'name:{channel_name}\nupload_year:{upload_date}\n[debug]search_term:{search_term}\n'
+                             f'\n')
+                    x += 1
+        mv_database(filename=f'response_files/format_response{searchid}.txt', song=song, artist=artist)
+        searchid += 1
 
 
 def mv_database(filename, song, artist):
     with open(filename, 'r', encoding='utf-8') as input_file:
         lines = input_file.readlines()
-    print('mv_database')
     vid_lines = [line.split(':')[1].strip() for line in lines if 'video_id' in line]
     cid_lines = [line.split(':')[1].strip() for line in lines if 'channel_id' in line]
     vname_lines = [line.split(':')[1].strip() for line in lines if 'video_name' in line]
     cname_lines = [line.split(':')[1].strip() for line in lines if 'channel_name' in line]
     year_check = [line.split(':')[1].strip() for line in lines if 'upload_year' in line]
-    # check if video is already in database using video id
     for vid, cid, vname, cname, eyear in zip(vid_lines, cid_lines, vname_lines, cname_lines, year_check):
         mv_exist = cur.execute("""SELECT video FROM mv WHERE video=?""", (vid,)).fetchone()
+        if artist not in vname:
+            print(f'Video title does not contain {artist}. Including video but may be inaccurate. Title: {vname}')
+            verified = 3
+        elif song not in vname:
+            print(f'Video title does not contain {song}. Including video but may be inaccurate. Title: {vname}')
+            verified = 3
+        else:
+            verified = 0
         cid_list.append(cid)
         if mv_exist:
-            print(f'Video with ID {vid} already exists in database. Skipping {song} by {artist}')
-            video_type(vname, vid)
+            if eyear[:4] != chosen_year_q:
+                print(f'Video uploaded in wrong year: {eyear}. Skipping this video..')
+                continue
+            else:
+                print(f'Video with ID {vid} already exists in database. Skipping {song} by {artist}')
+                video_type(vname, vid)
         else:
             print(f'[DEBUG] EXTRACTED YEAR = {eyear}\nCHOSEN YEAR = {chosen_year_q}')
             if eyear[:4] == chosen_year_q:
                 cur.execute("""INSERT INTO mv (video, vname, song, artist, channel, cid, verified)
-                VALUES (?, ?, ?, ?, ?, ?, ?)""", (vid, vname, song, artist, cname, cid, 'tbc',))
+                VALUES (?, ?, ?, ?, ?, ?, ?)""", (vid, vname, song, artist, cname, cid, verified,))
                 print(f'Video with ID {vid} and name {vname} added to database')
                 video_type(vname, vid)
             else:
@@ -281,7 +283,7 @@ def video_type(vid, yt_id):
     reaction_words = ['reaction']
     mv_words = ['mv', 'music video', 'm/v', '뮤비', 'official video']
     dance_words = ['dance', 'practice', '춤', '관행', '춤 연습', '나 춤 연습해']
-    perf_words = ['performance', 'stage', 'live', 'inkigayo', "[it's Live]", '[BE ORIGINAL]', '1theKILLPO']
+    perf_words = ['performance', 'stage', 'live', 'inkigayo', "[it's Live]", '[BE ORIGINAL]', '1theKILLPO', 'tour']
     lyric_words = ['lyric', 'color coded', 'lyrics', 'line distribution', '가사']
     youtube_link = f'https://www.youtube.com/watch?v={yt_id}'
     if check_string_for_phrases(vid, teaser_words):
@@ -402,7 +404,8 @@ def manual_verify(cid):
                 cur.execute("""UPDATE mv SET verified=2 WHERE cid=?""", (cid,))
     elif do_manual_verify.casefold() == 'n':
         print('No problem, if you change your mind you can manually open the "kp_albums.db" database and open the\n'
-              '"mv" table and change the value in the "verified" column to a 1 for verified, 0 for not.')
+              '"mv" table and change the value in the "verified" column to a 1 for verified, 0 for not. Or run '
+              '"alter_verification.bat" to use a script to do this.')
         time.sleep(1)
         print('Cleaning up..')
         time.sleep(2)
@@ -416,27 +419,22 @@ def manual_verify(cid):
 
 
 def output_excel():
-    workbook = xlsxwriter.Workbook(f"output/{datetime.date.today().strftime('%y%m%d')}_{datetime.datetime.now()
-                                   .strftime('%H%M%S')}.xlsx")
-    worksheet = workbook.add_worksheet(f'KPOP_{chosen_year_q}')
-
-    row = 0
-    col = 0
-
+    if not os.path.isdir('output'):
+        os.mkdir('output')
+    template_path = 'output_template.xlsx'
+    workbook_name = f'{datetime.date.today().strftime("%y%m%d")}_{datetime.datetime.now().strftime("%H%M%S")}.xlsx'
+    output_path = os.path.join('output', workbook_name)
+    # Copy the template Excel file
+    shutil.copy(template_path, output_path)
+    # Load the workbook
+    workbook = load_workbook(output_path)
+    # Select the active worksheet
+    worksheet = workbook.active
+    worksheet.title = f'KPOP_{chosen_year_q}'
+    row = 2
+    col = 1
     artists = cur.execute("""SELECT artist FROM mv""").fetchall()
-    print(artists)
     already_read = set()
-    worksheet.write(row, col, 'ARTIST')
-    worksheet.write(row, col + 1, 'SONG')
-    worksheet.write(row, col + 2, 'ALBUM')
-    worksheet.write(row, col + 3, 'MUSIC VIDEO')
-    worksheet.write(row, col + 4, 'DANCE PRACTICE')
-    worksheet.write(row, col + 5, 'PERFORMANCE/STAGE')
-    worksheet.write(row, col + 6, 'TEASER')
-    worksheet.write(row, col + 7, 'REACTION')
-    worksheet.write(row, col + 8, 'LYRICS')
-    worksheet.write(row, col + 9, 'OTHER')
-    row += 1
     for artist in artists:
         if artist not in already_read:
             already_read.add(artist)
@@ -446,11 +444,10 @@ def output_excel():
             already_read_song = set()
             for ii in songs:
                 if ii not in already_read_song:
-                    print(artist)
                     song_list = list(ii)
                     sel_song = str(song_list[0])
-                    worksheet.write(row, col, artist)
-                    worksheet.write(row, col+1, sel_song)
+                    worksheet.cell(row=row, column=col).value = artist
+                    worksheet.cell(row=row, column=col + 1).value = sel_song
                     already_read_song.add(ii)
                     video_res = cur.execute(f"""SELECT video FROM mv WHERE song=?""", (ii)).fetchall()
                     video_list = list(video_res)
@@ -468,47 +465,53 @@ def output_excel():
                             f'https://www.youtube.com/watch?v={vid}',)).fetchone()
                         pattern = r'[\'(),]'
                         vid_type = re.sub(pattern, '', str(vid_type))
-                        print(f'https://www.youtube.com/watch?v={vid}')
-
                         if vid_type == 'mv':
-                            mv_list.append(f' | https://www.youtube.com/watch?v={vid}')
+                            mv_list.append(f'https://www.youtube.com/watch?v={vid}, ')
                         elif vid_type == 'dance':
-                            dance_list.append(f' | https://www.youtube.com/watch?v={vid}')
+                            dance_list.append(f'https://www.youtube.com/watch?v={vid}, ')
                         elif vid_type == 'performance':
-                            performance_list.append(f' | https://www.youtube.com/watch?v={vid}')
+                            performance_list.append(f'https://www.youtube.com/watch?v={vid}, ')
                         elif vid_type == 'teaser':
-                            teaser_list.append(f' | https://www.youtube.com/watch?v={vid}')
+                            teaser_list.append(f'https://www.youtube.com/watch?v={vid}, ')
                         elif vid_type == 'reaction':
-                            reaction_list.append(f' | https://www.youtube.com/watch?v={vid}')
+                            reaction_list.append(f'https://www.youtube.com/watch?v={vid}, ')
                         elif vid_type == 'lyric':
-                            lyric_list.append(f' | https://www.youtube.com/watch?v={vid}')
+                            lyric_list.append(f'https://www.youtube.com/watch?v={vid}, ')
                         elif vid_type == 'other':
-                            other_list.append(f' | https://www.youtube.com/watch?v={vid}')
+                            other_list.append(f'https://www.youtube.com/watch?v={vid}, ')
                         else:
-                            print(f'N/A - {artist} potentially has no videos found. Please check output.')
-                        type_list = [mv_list, dance_list, performance_list, teaser_list, reaction_list, lyric_list,
-                                     other_list]
-                        col_num = 3
-                        for i in type_list:
-                            format_list = ''.join(i)
-                            worksheet.write(row, col+col_num, format_list)
-                            col_num += 1
+                            print(f'N/A - {artist} potentially has no videos found. Please check output. [FAULTY'
+                                  f' - CAN LIkELY BE IGNORED AT THIS TIME]')
+                    type_list = [mv_list, dance_list, performance_list, teaser_list, reaction_list, lyric_list,
+                                 other_list]
+                    col_num = 4
+                    for i in type_list:
+                        format_list = ''.join(i)
+                        worksheet.cell(row=row, column=col + col_num).value = format_list
+                        col_num += 1
+                    verified_sql = cur.execute("""SELECT verified FROM mv WHERE video=?""", (vid,)).fetchone()
+                    if verified_sql:
+                        verified = verified_sql[0]
+                        worksheet.cell(row=row, column=col + 10).value = verified
+                    else:
+                        worksheet.cell(row=row, column=col + 10).value = "Not Verified"
                     row += 1
-    workbook.close()
+    # Save the workbook
+    workbook.save(output_path)
 
 
 if __name__ == '__main__':
-    clean_files = glob.glob('response_files/*')
-    for i in clean_files:
-        os.remove(i)
+    #clean_files = glob.glob('response_files/*')
+    #for i in clean_files:
+    #    os.remove(i)
     chosen_year_q = input('Year to get data for (format: YYYY e.g 2024): ')
-    print('Loading database..')
-    # # PROBABLY NOT NEEDED: # chosen_year = int(site_year)
-    #
+    #print('Loading database..')
+    ## # PROBABLY NOT NEEDED: # chosen_year = int(site_year)
+    ##
     kp_db, cur = db_init(chosen_year_q)
-    kp_db.commit()
+    #kp_db.commit()
     #try:
-    #    # vname = video name, cid = channel id
+    ##    # vname = video name, cid = channel id
     #    cur.execute(f"CREATE TABLE mv(video, vname, song, artist, channel, cid, verified)")
     #    kp_db.commit()
     #except sqlite3.OperationalError:
@@ -517,20 +520,20 @@ if __name__ == '__main__':
     #kp_db.commit()
     #cur.execute(f"CREATE TABLE video_type(name, vid_id, vid_type)")
     #kp_db.commit()
-
-    # Setup geckodriver (Firefox)
-    print('Launching Firefox via Geckodriver in HEADLESS mode..')
+#
+    ## Setup geckodriver (Firefox)
+    #print('Launching Firefox via Geckodriver in HEADLESS mode..')
     #options = Options()
-    #options.headless = False
+    #options.add_argument("-headless")
     #geckodriver_path = 'geckodriver.exe'
     #service = Service(executable_path=geckodriver_path)
     #driver = webdriver.Firefox(options=options, service=service)
-    print(f'Checking kpopping list for year {chosen_year_q}..')
+    #print(f'Checking kpopping list for year {chosen_year_q}..')
     #main(chosen_year_q)
-    print('List created. Checking music videos..')
-    music_video()
-    print('Data grab complete. Checking channel verification status.. (May take a while.. '
-          'Approx. 6-7 seconds per video)')
+    #print('List created. Checking music videos..')
+    #music_video()
+    #print('Data grab complete. Checking channel verification status.. (May take a while.. '
+    #      'Approx. 6-7 seconds per video)')
     #code_timer_start = time.time()
     #channel_verified()
     #driver.quit()

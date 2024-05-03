@@ -36,17 +36,17 @@ cid_list = []
 def db_init(chosen_year):
     con = sqlite3.connect('kp_albums.db')
     cur = con.cursor()
-    try:
-        cur.execute(f'DROP TABLE IF EXISTS y{chosen_year}')
-    except sqlite3.OperationalError:
-        pass
-    try:
-        cur.execute('DROP TABLE IF EXISTS mv')
-        cur.execute('CREATE TABLE mv(video, vname, song, artist, channel, cid, verified)')
-    except sqlite3.OperationalError:
-        pass
-    cur.execute(f"CREATE TABLE y{chosen_year}(artist, album, songs, url, mv, mvverified)")
-    con.commit()
+    #try:
+    #    cur.execute(f'DROP TABLE IF EXISTS y{chosen_year}')
+    #except sqlite3.OperationalError:
+    #    pass
+    #try:
+    #    cur.execute('DROP TABLE IF EXISTS mv')
+    #    cur.execute('CREATE TABLE mv(video, vname, song, artist, channel, cid, verified)')
+    #except sqlite3.OperationalError:
+    #    pass
+    #cur.execute(f"CREATE TABLE y{chosen_year}(artist, album, songs, url, mv, mvverified)")
+    #con.commit()
     return con, cur
 
 
@@ -204,9 +204,12 @@ def translate_symbol(s):
 
 def music_video():
     mv_searches = cur.execute(f"SELECT artist, songs FROM y{chosen_year_q}").fetchall()
-    searchid = 0
+    iteration = 0
+    batch_execute = 1
     for mv_res in mv_searches:
-        with open(f'response_files/format_response{searchid}.txt', 'w+', encoding='utf-8') as jf:
+        print(batch_execute)
+        if batch_execute == 1:
+            jf = open(f'response_files/format_response{iteration}.txt', 'w+', encoding='utf-8')
             artist = mv_res[0]
             song = mv_res[1]
             print(f'{song} {artist}')
@@ -232,8 +235,38 @@ def music_video():
                              f'name:{channel_name}\nupload_year:{upload_date}\n[debug]search_term:{search_term}\n'
                              f'\n')
                     x += 1
-        mv_database(filename=f'response_files/format_response{searchid}.txt', song=song, artist=artist)
-        searchid += 1
+        else:
+            artist = mv_res[0]
+            song = mv_res[1]
+            print(f'{song} {artist}')
+            search_term = f'{mv_res} {artist}'
+            search_result = ytSearch(search_term).results
+            x = 0
+            for i in search_result:
+                i = str(i)
+                if x < 11:
+                    start_index = i.find("videoId=") + len("videoId=")
+                    end_index = i.find(">", start_index)
+                    video_id = i[start_index:end_index]
+                    search_id = f'https://www.youtube.com/watch?v={video_id}'
+                    youtube_return = YouTube(search_id)
+                    cid_line = youtube_return.channel_id
+                    channel_user = youtube_return.channel_url
+                    start_index = channel_user.find("@") + len("@")
+                    channel_name = channel_user[start_index:]
+                    upload_date = youtube_return.publish_date.year
+                    vname_line = youtube_return.title
+                    print(video_id)
+                    jf.write(f'video_id:{video_id}\nchannel_id:{cid_line}\nvideo_name:{vname_line}\nchannel_'
+                             f'name:{channel_name}\nupload_year:{upload_date}\n[debug]search_term:{search_term}\n'
+                             f'\n')
+                    x += 1
+        batch_execute += 1
+        if batch_execute == 10:
+            batch_execute = 1
+            jf.close()
+            mv_database(filename=f'response_files/format_response{iteration}.txt', song=song, artist=artist)
+            iteration += 1
 
 
 def mv_database(filename, song, artist):
@@ -498,39 +531,42 @@ def output_excel():
 
 
 if __name__ == '__main__':
+    import timeit
+    start = timeit.default_timer()
     print('Cleaning files..')
     clean_files = glob.glob('response_files/*')
     for i in clean_files:
         os.remove(i)
     chosen_year_q = input('Year to get data for (format: YYYY e.g 2024): ')
-    print('Loading database..')
+    # print('Loading database..')
     kp_db, cur = db_init(chosen_year_q)
-    kp_db.commit()
-    try:
-        # vname = video name, cid = channel id
-        cur.execute(f"CREATE TABLE mv(video, vname, song, artist, channel, cid, verified)")
-        kp_db.commit()
-    except sqlite3.OperationalError:
-        pass
-    cur.execute("DROP TABLE IF EXISTS video_type")
-    kp_db.commit()
-    cur.execute(f"CREATE TABLE video_type(name, vid_id, vid_type)")
-    kp_db.commit()
-
-    # Setup geckodriver (Firefox)
-    print('Launching Firefox via Geckodriver in HEADLESS mode..')
-    options = Options()
-    options.add_argument("-headless")
-    geckodriver_path = 'geckodriver.exe'
-    service = Service(executable_path=geckodriver_path)
-    driver = webdriver.Firefox(options=options, service=service)
-    print(f'Checking kpopping list for year {chosen_year_q}..')
-    main(chosen_year_q)
-    print('List created. Checking music videos..')
+    # kp_db.commit()
+    # try:
+    #     # vname = video name, cid = channel id
+    #     cur.execute(f"CREATE TABLE mv(video, vname, song, artist, channel, cid, verified)")
+    #     kp_db.commit()
+    # except sqlite3.OperationalError:
+    #     pass
+    # cur.execute("DROP TABLE IF EXISTS video_type")
+    # kp_db.commit()
+    # cur.execute(f"CREATE TABLE video_type(name, vid_id, vid_type)")
+    # kp_db.commit()
+#
+    # # Setup geckodriver (Firefox)
+    # print('Launching Firefox via Geckodriver in HEADLESS mode..')
+    # options = Options()
+    # options.add_argument("-headless")
+    # geckodriver_path = 'geckodriver.exe'
+    # service = Service(executable_path=geckodriver_path)
+    # driver = webdriver.Firefox(options=options, service=service)
+    # print(f'Checking kpopping list for year {chosen_year_q}..')
+    # main(chosen_year_q)
+    # print('List created. Checking music videos..')
     music_video()
-    print('Data grab complete. Checking channel verification status.. (May take a while.. '
-          'Approx. 6-7 seconds per video)')
-    code_timer_start = time.time()
-    channel_verified()
-    driver.quit()
-    output_excel()
+    # print('Data grab complete. Checking channel verification status.. (May take a while.. '
+    #       'Approx. 6-7 seconds per video)')
+    # channel_verified()
+    # driver.quit()
+    # output_excel()
+    stop = timeit.default_timer()
+    print(f'Total runtime: {stop - start}')

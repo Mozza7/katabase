@@ -6,7 +6,7 @@ from selenium.webdriver.firefox.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as ec
-from selenium.common.exceptions import NoSuchElementException, TimeoutException
+from selenium.common.exceptions import NoSuchElementException, TimeoutException, InvalidSessionIdException
 # Converting language to the "sound" (ie Chinese > Chinese Pinyin)
 from pypinyin import lazy_pinyin, Style
 import pykakasi
@@ -28,8 +28,6 @@ from pytube import Search as ytSearch
 from pytube import YouTube
 
 transliter = Transliter(academic)
-
-# Create a list for channel ID's
 cid_list = []
 
 
@@ -88,6 +86,60 @@ def main(kpop_year):
     it_num = 1
     for artist, album in merged_dict.items():
         print(artist)
+        try:
+            re_init = 0
+            kpopping_songs(album, attempted_urls, it_num, re_init, artist)
+        except InvalidSessionIdException:
+            re_init = 1
+            kpopping_songs(album, attempted_urls, it_num, re_init, artist)
+
+
+def kpopping_songs(album, attempted_urls, it_num, re_init, artist):
+    if re_init == 1:
+        print('FireFox has crashed. Re-initializing..')
+        time.sleep(3)
+        redriver = webdriver.Firefox(options=options, service=service)
+        time.sleep(1)
+        for f in album:
+            if f'https://kpopping.com/musicalbum/{f}'.lower() in attempted_urls:
+                it_num += 1
+                f = f'https://kpopping.com/musicalbum/{f}{it_num}'
+            try:
+                redriver.get(f'https://kpopping.com/musicalbum/{f}')
+                attempted_urls.append(f'https://kpopping.com/musicalbum/{f}'.lower())
+                print(f'https://kpopping.com/musicalbum/{f}')
+            except TimeoutException:
+                attempt = 0
+                while True:
+                    attempt += 1
+                    time.sleep(30)
+                    try:
+                        redriver.get(f'https://kpopping.com/musicalbum/{f}')
+                        break
+                    except TimeoutException:
+                        if attempt == 6:
+                            print('TIMED OUT. 6 ATTEMPTS MADE OVER 3 MINUTES.')
+                            redriver.quit()
+                            quit()
+            try:
+                redriver.find_element(By.CSS_SELECTOR, '.fa-compact-disc')
+                songs = grab_songs()
+                # DATABASE IS IN FORMAT artist, album, songs, url, friendly_name
+                # db_album used to format album name into a more readable format
+                db_album = str(album[4:]).replace('-', '')
+                for item in songs:
+                    # FNAME
+                    print(item)
+                    cur.execute(f"INSERT INTO y{chosen_year_q} (artist,album,songs) VALUES (?,?,?)",
+                                (artist, db_album, item))
+                    kp_db.commit()
+            except NoSuchElementException:
+                no_album = 'N/A'
+                no_song = 'N/A'
+                cur.execute(f"INSERT INTO y{chosen_year_q} (artist,album,songs) VALUES (?,?,?)", (artist, no_album,
+                                                                                                  no_song))
+                kp_db.commit()
+    else:
         for f in album:
             if f'https://kpopping.com/musicalbum/{f}'.lower() in attempted_urls:
                 it_num += 1
@@ -204,9 +256,12 @@ def translate_symbol(s):
 
 def music_video():
     mv_searches = cur.execute(f"SELECT artist, songs FROM y{chosen_year_q}").fetchall()
-    searchid = 0
+    iteration = 0
+    batch_execute = 1
     for mv_res in mv_searches:
-        with open(f'response_files/format_response{searchid}.txt', 'w+', encoding='utf-8') as jf:
+        print(batch_execute)
+        if batch_execute == 1:
+            jf = open(f'response_files/format_response{iteration}.txt', 'w+', encoding='utf-8')
             artist = mv_res[0]
             song = mv_res[1]
             print(f'{song} {artist}')
@@ -232,8 +287,38 @@ def music_video():
                              f'name:{channel_name}\nupload_year:{upload_date}\n[debug]search_term:{search_term}\n'
                              f'\n')
                     x += 1
-        mv_database(filename=f'response_files/format_response{searchid}.txt', song=song, artist=artist)
-        searchid += 1
+        else:
+            artist = mv_res[0]
+            song = mv_res[1]
+            print(f'{song} {artist}')
+            search_term = f'{mv_res} {artist}'
+            search_result = ytSearch(search_term).results
+            x = 0
+            for i in search_result:
+                i = str(i)
+                if x < 11:
+                    start_index = i.find("videoId=") + len("videoId=")
+                    end_index = i.find(">", start_index)
+                    video_id = i[start_index:end_index]
+                    search_id = f'https://www.youtube.com/watch?v={video_id}'
+                    youtube_return = YouTube(search_id)
+                    cid_line = youtube_return.channel_id
+                    channel_user = youtube_return.channel_url
+                    start_index = channel_user.find("@") + len("@")
+                    channel_name = channel_user[start_index:]
+                    upload_date = youtube_return.publish_date.year
+                    vname_line = youtube_return.title
+                    print(video_id)
+                    jf.write(f'video_id:{video_id}\nchannel_id:{cid_line}\nvideo_name:{vname_line}\nchannel_'
+                             f'name:{channel_name}\nupload_year:{upload_date}\n[debug]search_term:{search_term}\n'
+                             f'\n')
+                    x += 1
+        batch_execute += 1
+        if batch_execute == 10:
+            batch_execute = 1
+            jf.close()
+            mv_database(filename=f'response_files/format_response{iteration}.txt', song=song, artist=artist)
+            iteration += 1
 
 
 def mv_database(filename, song, artist):
@@ -421,11 +506,8 @@ def output_excel():
     template_path = 'output_template.xlsx'
     workbook_name = f'{datetime.date.today().strftime("%y%m%d")}_{datetime.datetime.now().strftime("%H%M%S")}.xlsx'
     output_path = os.path.join('output', workbook_name)
-    # Copy the template Excel file
     shutil.copy(template_path, output_path)
-    # Load the workbook
     workbook = load_workbook(output_path)
-    # Select the active worksheet
     worksheet = workbook.active
     worksheet.title = f'KPOP_{chosen_year_q}'
     row = 2
@@ -493,11 +575,12 @@ def output_excel():
                     else:
                         worksheet.cell(row=row, column=col + 10).value = "Not Verified"
                     row += 1
-    # Save the workbook
     workbook.save(output_path)
 
 
 if __name__ == '__main__':
+    import timeit
+    start = timeit.default_timer()
     print('Cleaning files..')
     clean_files = glob.glob('response_files/*')
     for i in clean_files:
@@ -507,7 +590,6 @@ if __name__ == '__main__':
     kp_db, cur = db_init(chosen_year_q)
     kp_db.commit()
     try:
-        # vname = video name, cid = channel id
         cur.execute(f"CREATE TABLE mv(video, vname, song, artist, channel, cid, verified)")
         kp_db.commit()
     except sqlite3.OperationalError:
@@ -516,7 +598,6 @@ if __name__ == '__main__':
     kp_db.commit()
     cur.execute(f"CREATE TABLE video_type(name, vid_id, vid_type)")
     kp_db.commit()
-
     # Setup geckodriver (Firefox)
     print('Launching Firefox via Geckodriver in HEADLESS mode..')
     options = Options()
@@ -530,7 +611,8 @@ if __name__ == '__main__':
     music_video()
     print('Data grab complete. Checking channel verification status.. (May take a while.. '
           'Approx. 6-7 seconds per video)')
-    code_timer_start = time.time()
     channel_verified()
     driver.quit()
     output_excel()
+    stop = timeit.default_timer()
+    print(f'Total runtime: {stop - start}')

@@ -86,99 +86,54 @@ def main(kpop_year):
     it_num = 1
     for artist, album in merged_dict.items():
         print(artist)
+        kpopping_songs(album, attempted_urls, it_num, artist)
+
+
+def kpopping_songs(album, attempted_urls, it_num, artist):
+    for f in album:
+        if f'https://kpopping.com/musicalbum/{f}'.lower() in attempted_urls:
+            it_num += 1
+            f = f'https://kpopping.com/musicalbum/{f}{it_num}'
         try:
-            re_init = 0
-            kpopping_songs(album, attempted_urls, it_num, re_init, artist)
-        except InvalidSessionIdException:
-            re_init = 1
-            kpopping_songs(album, attempted_urls, it_num, re_init, artist)
-
-
-def kpopping_songs(album, attempted_urls, it_num, re_init, artist):
-    if re_init == 1:
-        print('FireFox has crashed. Re-initializing..')
-        time.sleep(3)
-        redriver = webdriver.Firefox(options=options, service=service)
-        time.sleep(1)
-        for f in album:
-            if f'https://kpopping.com/musicalbum/{f}'.lower() in attempted_urls:
-                it_num += 1
-                f = f'https://kpopping.com/musicalbum/{f}{it_num}'
-            try:
-                redriver.get(f'https://kpopping.com/musicalbum/{f}')
-                attempted_urls.append(f'https://kpopping.com/musicalbum/{f}'.lower())
-                print(f'https://kpopping.com/musicalbum/{f}')
-            except TimeoutException:
-                attempt = 0
-                while True:
-                    attempt += 1
-                    time.sleep(30)
-                    try:
-                        redriver.get(f'https://kpopping.com/musicalbum/{f}')
-                        break
-                    except TimeoutException:
-                        if attempt == 6:
-                            print('TIMED OUT. 6 ATTEMPTS MADE OVER 3 MINUTES.')
-                            redriver.quit()
-                            quit()
-            try:
-                redriver.find_element(By.CSS_SELECTOR, '.fa-compact-disc')
-                songs = grab_songs()
-                # DATABASE IS IN FORMAT artist, album, songs, url, friendly_name
-                # db_album used to format album name into a more readable format
-                db_album = str(album[4:]).replace('-', '')
-                for item in songs:
-                    # FNAME
-                    print(item)
-                    cur.execute(f"INSERT INTO y{chosen_year_q} (artist,album,songs) VALUES (?,?,?)",
-                                (artist, db_album, item))
-                    kp_db.commit()
-            except NoSuchElementException:
-                no_album = 'N/A'
-                no_song = 'N/A'
-                cur.execute(f"INSERT INTO y{chosen_year_q} (artist,album,songs) VALUES (?,?,?)", (artist, no_album,
-                                                                                                  no_song))
-                kp_db.commit()
-    else:
-        for f in album:
-            if f'https://kpopping.com/musicalbum/{f}'.lower() in attempted_urls:
-                it_num += 1
-                f = f'https://kpopping.com/musicalbum/{f}{it_num}'
-            try:
-                driver.get(f'https://kpopping.com/musicalbum/{f}')
-                attempted_urls.append(f'https://kpopping.com/musicalbum/{f}'.lower())
-                print(f'https://kpopping.com/musicalbum/{f}')
-            except TimeoutException:
-                attempt = 0
-                while True:
-                    attempt += 1
-                    time.sleep(30)
-                    try:
-                        driver.get(f'https://kpopping.com/musicalbum/{f}')
-                        break
-                    except TimeoutException:
-                        if attempt == 6:
-                            print('TIMED OUT. 6 ATTEMPTS MADE OVER 3 MINUTES.')
-                            driver.quit()
-                            quit()
+            driver.get(f'https://kpopping.com/musicalbum/{f}')
+            attempted_urls.append(f'https://kpopping.com/musicalbum/{f}'.lower())
+            print(f'https://kpopping.com/musicalbum/{f}')
+        except TimeoutException:
+            attempt = 0
+            while True:
+                attempt += 1
+                time.sleep(30)
+                try:
+                    driver.get(f'https://kpopping.com/musicalbum/{f}')
+                    break
+                except TimeoutException:
+                    if attempt == 6:
+                        print('TIMED OUT. 6 ATTEMPTS MADE OVER 3 MINUTES.')
+                        driver.quit()
+                        quit()
+        try:
             try:
                 driver.find_element(By.CSS_SELECTOR, '.fa-compact-disc')
-                songs = grab_songs()
-                # DATABASE IS IN FORMAT artist, album, songs, url, friendly_name
-                # db_album used to format album name into a more readable format
-                db_album = str(album[4:]).replace('-', '')
-                for item in songs:
-                    # FNAME
-                    print(item)
-                    cur.execute(f"INSERT INTO y{chosen_year_q} (artist,album,songs) VALUES (?,?,?)",
-                                (artist, db_album, item))
-                    kp_db.commit()
-            except NoSuchElementException:
-                no_album = 'N/A'
-                no_song = 'N/A'
-                cur.execute(f"INSERT INTO y{chosen_year_q} (artist,album,songs) VALUES (?,?,?)", (artist, no_album,
-                                                                                                  no_song))
+            except InvalidSessionIdException:
+                print('FireFox not responding.. Waiting 10 seconds..')
+                time.sleep(10)
+                driver.find_element(By.CSS_SELECTOR, '.fa-compact-disc')
+            songs = grab_songs()
+            # DATABASE IS IN FORMAT artist, album, songs, url, friendly_name
+            # db_album used to format album name into a more readable format
+            db_album = str(album[4:]).replace('-', '')
+            for item in songs:
+                # FNAME
+                print(item)
+                cur.execute(f"INSERT INTO y{chosen_year_q} (artist,album,songs) VALUES (?,?,?)",
+                            (artist, db_album, item))
                 kp_db.commit()
+        except NoSuchElementException:
+            no_album = 'N/A'
+            no_song = 'N/A'
+            cur.execute(f"INSERT INTO y{chosen_year_q} (artist,album,songs) VALUES (?,?,?)", (artist, no_album,
+                                                                                              no_song))
+            kp_db.commit()
 
 
 def grab_songs():

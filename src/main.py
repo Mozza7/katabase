@@ -6,7 +6,7 @@ from selenium.webdriver.firefox.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as ec
-from selenium.common.exceptions import NoSuchElementException, TimeoutException
+from selenium.common.exceptions import NoSuchElementException, TimeoutException, InvalidSessionIdException
 # Converting language to the "sound" (ie Chinese > Chinese Pinyin)
 from pypinyin import lazy_pinyin, Style
 import pykakasi
@@ -28,25 +28,23 @@ from pytube import Search as ytSearch
 from pytube import YouTube
 
 transliter = Transliter(academic)
-
-# Create a list for channel ID's
 cid_list = []
 
 
 def db_init(chosen_year):
     con = sqlite3.connect('kp_albums.db')
     cur = con.cursor()
-    #try:
-    #    cur.execute(f'DROP TABLE IF EXISTS y{chosen_year}')
-    #except sqlite3.OperationalError:
-    #    pass
-    #try:
-    #    cur.execute('DROP TABLE IF EXISTS mv')
-    #    cur.execute('CREATE TABLE mv(video, vname, song, artist, channel, cid, verified)')
-    #except sqlite3.OperationalError:
-    #    pass
-    #cur.execute(f"CREATE TABLE y{chosen_year}(artist, album, songs, url, mv, mvverified)")
-    #con.commit()
+    try:
+        cur.execute(f'DROP TABLE IF EXISTS y{chosen_year}')
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cur.execute('DROP TABLE IF EXISTS mv')
+        cur.execute('CREATE TABLE mv(video, vname, song, artist, channel, cid, verified)')
+    except sqlite3.OperationalError:
+        pass
+    cur.execute(f"CREATE TABLE y{chosen_year}(artist, album, songs, url, mv, mvverified)")
+    con.commit()
     return con, cur
 
 
@@ -88,6 +86,60 @@ def main(kpop_year):
     it_num = 1
     for artist, album in merged_dict.items():
         print(artist)
+        try:
+            re_init = 0
+            kpopping_songs(album, attempted_urls, it_num, re_init, artist)
+        except InvalidSessionIdException:
+            re_init = 1
+            kpopping_songs(album, attempted_urls, it_num, re_init, artist)
+
+
+def kpopping_songs(album, attempted_urls, it_num, re_init, artist):
+    if re_init == 1:
+        print('FireFox has crashed. Re-initializing..')
+        time.sleep(3)
+        redriver = webdriver.Firefox(options=options, service=service)
+        time.sleep(1)
+        for f in album:
+            if f'https://kpopping.com/musicalbum/{f}'.lower() in attempted_urls:
+                it_num += 1
+                f = f'https://kpopping.com/musicalbum/{f}{it_num}'
+            try:
+                redriver.get(f'https://kpopping.com/musicalbum/{f}')
+                attempted_urls.append(f'https://kpopping.com/musicalbum/{f}'.lower())
+                print(f'https://kpopping.com/musicalbum/{f}')
+            except TimeoutException:
+                attempt = 0
+                while True:
+                    attempt += 1
+                    time.sleep(30)
+                    try:
+                        redriver.get(f'https://kpopping.com/musicalbum/{f}')
+                        break
+                    except TimeoutException:
+                        if attempt == 6:
+                            print('TIMED OUT. 6 ATTEMPTS MADE OVER 3 MINUTES.')
+                            redriver.quit()
+                            quit()
+            try:
+                redriver.find_element(By.CSS_SELECTOR, '.fa-compact-disc')
+                songs = grab_songs()
+                # DATABASE IS IN FORMAT artist, album, songs, url, friendly_name
+                # db_album used to format album name into a more readable format
+                db_album = str(album[4:]).replace('-', '')
+                for item in songs:
+                    # FNAME
+                    print(item)
+                    cur.execute(f"INSERT INTO y{chosen_year_q} (artist,album,songs) VALUES (?,?,?)",
+                                (artist, db_album, item))
+                    kp_db.commit()
+            except NoSuchElementException:
+                no_album = 'N/A'
+                no_song = 'N/A'
+                cur.execute(f"INSERT INTO y{chosen_year_q} (artist,album,songs) VALUES (?,?,?)", (artist, no_album,
+                                                                                                  no_song))
+                kp_db.commit()
+    else:
         for f in album:
             if f'https://kpopping.com/musicalbum/{f}'.lower() in attempted_urls:
                 it_num += 1
@@ -454,11 +506,8 @@ def output_excel():
     template_path = 'output_template.xlsx'
     workbook_name = f'{datetime.date.today().strftime("%y%m%d")}_{datetime.datetime.now().strftime("%H%M%S")}.xlsx'
     output_path = os.path.join('output', workbook_name)
-    # Copy the template Excel file
     shutil.copy(template_path, output_path)
-    # Load the workbook
     workbook = load_workbook(output_path)
-    # Select the active worksheet
     worksheet = workbook.active
     worksheet.title = f'KPOP_{chosen_year_q}'
     row = 2
@@ -526,7 +575,6 @@ def output_excel():
                     else:
                         worksheet.cell(row=row, column=col + 10).value = "Not Verified"
                     row += 1
-    # Save the workbook
     workbook.save(output_path)
 
 
@@ -538,35 +586,33 @@ if __name__ == '__main__':
     for i in clean_files:
         os.remove(i)
     chosen_year_q = input('Year to get data for (format: YYYY e.g 2024): ')
-    # print('Loading database..')
+    print('Loading database..')
     kp_db, cur = db_init(chosen_year_q)
-    # kp_db.commit()
-    # try:
-    #     # vname = video name, cid = channel id
-    #     cur.execute(f"CREATE TABLE mv(video, vname, song, artist, channel, cid, verified)")
-    #     kp_db.commit()
-    # except sqlite3.OperationalError:
-    #     pass
-    # cur.execute("DROP TABLE IF EXISTS video_type")
-    # kp_db.commit()
-    # cur.execute(f"CREATE TABLE video_type(name, vid_id, vid_type)")
-    # kp_db.commit()
-#
-    # # Setup geckodriver (Firefox)
-    # print('Launching Firefox via Geckodriver in HEADLESS mode..')
-    # options = Options()
-    # options.add_argument("-headless")
-    # geckodriver_path = 'geckodriver.exe'
-    # service = Service(executable_path=geckodriver_path)
-    # driver = webdriver.Firefox(options=options, service=service)
-    # print(f'Checking kpopping list for year {chosen_year_q}..')
-    # main(chosen_year_q)
-    # print('List created. Checking music videos..')
+    kp_db.commit()
+    try:
+        cur.execute(f"CREATE TABLE mv(video, vname, song, artist, channel, cid, verified)")
+        kp_db.commit()
+    except sqlite3.OperationalError:
+        pass
+    cur.execute("DROP TABLE IF EXISTS video_type")
+    kp_db.commit()
+    cur.execute(f"CREATE TABLE video_type(name, vid_id, vid_type)")
+    kp_db.commit()
+    # Setup geckodriver (Firefox)
+    print('Launching Firefox via Geckodriver in HEADLESS mode..')
+    options = Options()
+    options.add_argument("-headless")
+    geckodriver_path = 'geckodriver.exe'
+    service = Service(executable_path=geckodriver_path)
+    driver = webdriver.Firefox(options=options, service=service)
+    print(f'Checking kpopping list for year {chosen_year_q}..')
+    main(chosen_year_q)
+    print('List created. Checking music videos..')
     music_video()
-    # print('Data grab complete. Checking channel verification status.. (May take a while.. '
-    #       'Approx. 6-7 seconds per video)')
-    # channel_verified()
-    # driver.quit()
-    # output_excel()
+    print('Data grab complete. Checking channel verification status.. (May take a while.. '
+          'Approx. 6-7 seconds per video)')
+    channel_verified()
+    driver.quit()
+    output_excel()
     stop = timeit.default_timer()
     print(f'Total runtime: {stop - start}')

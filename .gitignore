@@ -1,6 +1,5 @@
 *.sns
 .idea
-/src/kp_albums.db
 
 
 keys.txt
@@ -9,3 +8,4 @@ keys.txt
 /src/output/*
 /src/response_files/*
 /src/__pycache__
+src/kp_albums.db

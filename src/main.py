@@ -277,6 +277,8 @@ def music_video():
 
 
 def mv_database(filename, song, artist):
+    if not os.path.isdir('response_files'):
+        os.mkdir('response_files')
     with open(filename, 'r', encoding='utf-8') as input_file:
         lines = input_file.readlines()
     vid_lines = [line.split(':')[1].strip() for line in lines if 'video_id' in line]
@@ -370,7 +372,6 @@ def channel_verified():
             continue
     kp_db.commit()
     for i in cid_list:
-        # Check if manual verification is required
         ver_value = cur.execute("""SELECT verified FROM mv WHERE cid=?""", (i,)).fetchone()
         if ver_value == 2:
             manual_verify(i)
@@ -379,20 +380,12 @@ def channel_verified():
 
 
 def verify_element_exist(url, run_number):
-    # CSS Selector
     verified_badge = ('ytd-channel-name.ytd-c4-tabbed-header-renderer > ytd-badge-supported-renderer:nth-child(2) '
                       '> div:nth-child(1) > yt-icon:nth-child(1) > yt-icon-shape:nth-child(1) > icon-shape:nth-child(1)'
                       ' > div:nth-child(1)')
-    # CSS Selector
     artist_badge = ('ytd-channel-name.ytd-c4-tabbed-header-renderer > ytd-badge-supported-renderer:nth-child(2) '
                     '> div:nth-child(1) > yt-icon:nth-child(1) > yt-icon-shape:nth-child(1) > icon-shape:nth-child(1) '
                     '> div:nth-child(1) > svg:nth-child(1)')
-    # SELENIUM LOAD YOUTUBE
-    # check if elements exist (to see if cookies page or not)
-    # cookie_accept appears if you open the YouTube main page. keeping in code for now in case it crops up again
-    cookie_accept = ('ytd-button-renderer.ytd-consent-bump-v2-lightbox:nth-child(2) > yt-button-shape:nth-child(1) '
-                     '> button:nth-child(1) > yt-touch-feedback-shape:nth-child(2) > div:nth-child(1) > '
-                     'div:nth-child(2)')
     cookie_accept_2 = ('.KZ9vpc > form:nth-child(3) > div:nth-child(1) > div:nth-child(1) > '
                        'button:nth-child(1) > span:nth-child(4)')
     driver.get(url)

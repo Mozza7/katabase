@@ -8,4 +8,4 @@ main/*.txt
 
 src/output/*
 src/response_files/*
-src/__pycahce__/*
+/src/__pycache__

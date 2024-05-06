@@ -302,7 +302,7 @@ if __name__ == '__main__':
     print(f'Checking kpopping list for year {chosen_year_q}..')
     #main(chosen_year_q)
     print('List created. Checking music videos..')
-    music_video()
+    #music_video()
     print('Data grab complete. Checking channel verification status.. (May take a while.. '
           'Approx. 6-7 seconds per video)')
     #channel_verified(cid_list, cur, kp_db, driver)

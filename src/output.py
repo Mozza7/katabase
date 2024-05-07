@@ -49,8 +49,10 @@ def output_excel(os, datetime, chosen_year_q, cur, re):
                         vid = re.sub(pattern, '', str(vid_sql))
                         vid_type = cur.execute("""SELECT vid_type FROM video_type WHERE vid_id=?""", (
                             f'https://www.youtube.com/watch?v={vid}',)).fetchone()
+                        verified = cur.execute("""SELECT verified FROM mv WHERE video=?""", (vid,)).fetchone()
                         pattern = r'[\'(),]'
                         vid_type = re.sub(pattern, '', str(vid_type))
+                        verify_list.append(str(verified[0]))
                         if vid_type == 'mv':
                             mv_list.append(f'https://www.youtube.com/watch?v={vid}, ')
                         elif vid_type == 'dance':
@@ -68,26 +70,14 @@ def output_excel(os, datetime, chosen_year_q, cur, re):
                         else:
                             print(f'N/A - {artist} potentially has no videos found. Please check output. [FAULTY'
                                   f' - CAN LIkELY BE IGNORED AT THIS TIME]')
-                        check_if_verified(vid, verify_list, cur)
-
                     type_list = [mv_list, dance_list, performance_list, teaser_list, reaction_list, lyric_list,
-                                 other_list]
+                                 other_list, verify_list]
                     col_num = 4
                     for i in type_list:
                         format_list = ''.join(i)
                         worksheet.cell(row=row, column=col + col_num).value = format_list
                         col_num += 1
                     row += 1
-                    for i in verify_list:
-                        if i == 1:
-                            worksheet.cell(row=row_ver, column=col + 10).value = "Verified"
-                        elif i == 2:
-                            worksheet.cell(row=row_ver, column=col + 10).value = "Manual review"
-                        elif i == 3:
-                            worksheet.cell(row=row_ver, column=col + 10).value = 3
-                        else:
-                            worksheet.cell(row=row_ver, column=col + 10).value = "Verification error"
-                        row_ver += 1
     workbook.save(output_path)
 
 

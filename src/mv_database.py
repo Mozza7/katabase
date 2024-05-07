@@ -1,4 +1,4 @@
-def mv_database(filename, song, artist, os, cur, cid_list, chosen_year_q, kp_db, re):
+def mv_database(filename, song, artist, cur, cid_list, chosen_year_q, kp_db, re):
     with open(filename, 'r', encoding='utf-8') as input_file:
         lines = input_file.readlines()
     vid_lines = [line.split(':')[1].strip() for line in lines if 'video_id' in line]

@@ -5,6 +5,7 @@ from openpyxl import load_workbook
 # noinspection PyShadowingNames
 # Above is to stop pycharm complaining about names shadowing from outer scope, this is due to the: if __name__ section
 def output_excel(os, datetime, chosen_year_q, cur, re):
+    print(type(cur))
     if not os.path.isdir('output'):
         os.mkdir('output')
     template_path = 'output_template.xlsx'
@@ -101,5 +102,5 @@ if __name__ == '__main__':
     import re
     from db_init import db_connect
     chosen_year_q = input('Year to get data for (format: YYYY e.g 2024): ')
-    cur = db_connect(chosen_year_q, is_main=0)
+    kp_db, cur = db_connect(chosen_year_q, is_main=0)
     output_excel(os, datetime, chosen_year_q, cur, re)

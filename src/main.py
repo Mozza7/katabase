@@ -267,8 +267,8 @@ def music_video():
         if batch_execute == 10:
             batch_execute = 1
             jf.close()
-            mv_database(filename=f'response_files/format_response{iteration}.txt', song=song, artist=artist, os=os,
-                        cur=cur, cid_list=cid_list, chosen_year_q=chosen_year_q, kp_db=kp_db, re=re)
+            mv_database(filename=f'response_files/format_response{iteration}.txt', song=song, artist=artist, cur=cur,
+                        cid_list=cid_list, chosen_year_q=chosen_year_q, kp_db=kp_db, re=re)
             iteration += 1
 
 
@@ -281,16 +281,16 @@ if __name__ == '__main__':
         os.remove(i)
     chosen_year_q = input('Year to get data for (format: YYYY e.g 2024): ')
     print('Loading database..')
-    kp_db, cur = db_connect(chosen_year_q, is_main=1)
+    kp_db, cur = db_connect(chosen_year_q, is_main=0)
     kp_db.commit()
-    try:
-        cur.execute(f"CREATE TABLE mv(video, vname, song, artist, channel, cid, verified)")
-        kp_db.commit()
-    except sqlite3.OperationalError:
-        pass
-    cur.execute("DROP TABLE IF EXISTS video_type")
-    cur.execute(f"CREATE TABLE video_type(name, vid_id, vid_type)")
-    kp_db.commit()
+    #try:
+    #    cur.execute(f"CREATE TABLE mv(video, vname, song, artist, channel, cid, verified)")
+    #    kp_db.commit()
+    #except sqlite3.OperationalError:
+    #    pass
+    #cur.execute("DROP TABLE IF EXISTS video_type")
+    #cur.execute(f"CREATE TABLE video_type(name, vid_id, vid_type)")
+    #kp_db.commit()
     # Setup geckodriver (Firefox)
     print('Launching Firefox via Geckodriver in HEADLESS mode..')
     options = Options()
@@ -299,12 +299,12 @@ if __name__ == '__main__':
     service = Service(executable_path=geckodriver_path)
     driver = webdriver.Firefox(options=options, service=service)
     print(f'Checking kpopping list for year {chosen_year_q}..')
-    main(chosen_year_q)
+    #main(chosen_year_q)
     print('List created. Checking music videos..')
     music_video()
     print('Data grab complete. Checking channel verification status.. (May take a while.. '
           'Approx. 6-7 seconds per video)')
-    channel_verified(cid_list, cur, kp_db, driver)
+    #channel_verified(cid_list, cur, kp_db, driver)
     driver.quit()
     output_excel(os, datetime, chosen_year_q, cur, re)
     stop = timeit.default_timer()

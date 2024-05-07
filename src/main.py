@@ -283,14 +283,14 @@ if __name__ == '__main__':
     print('Loading database..')
     kp_db, cur = db_connect(chosen_year_q, is_main=0)
     kp_db.commit()
-    #try:
-    #    cur.execute(f"CREATE TABLE mv(video, vname, song, artist, channel, cid, verified)")
-    #    kp_db.commit()
-    #except sqlite3.OperationalError:
-    #    pass
-    #cur.execute("DROP TABLE IF EXISTS video_type")
-    #cur.execute(f"CREATE TABLE video_type(name, vid_id, vid_type)")
-    #kp_db.commit()
+    try:
+        cur.execute(f"CREATE TABLE mv(video, vname, song, artist, channel, cid, verified)")
+        kp_db.commit()
+    except sqlite3.OperationalError:
+        pass
+    cur.execute("DROP TABLE IF EXISTS video_type")
+    cur.execute(f"CREATE TABLE video_type(name, vid_id, vid_type)")
+    kp_db.commit()
     # Setup geckodriver (Firefox)
     print('Launching Firefox via Geckodriver in HEADLESS mode..')
     options = Options()
@@ -299,12 +299,12 @@ if __name__ == '__main__':
     service = Service(executable_path=geckodriver_path)
     driver = webdriver.Firefox(options=options, service=service)
     print(f'Checking kpopping list for year {chosen_year_q}..')
-    #main(chosen_year_q)
+    main(chosen_year_q)
     print('List created. Checking music videos..')
     music_video()
     print('Data grab complete. Checking channel verification status.. (May take a while.. '
           'Approx. 6-7 seconds per video)')
-    #channel_verified(cid_list, cur, kp_db, driver)
+    channel_verified(cid_list, cur, kp_db, driver)
     driver.quit()
     output_excel(os, datetime, chosen_year_q, cur, re)
     stop = timeit.default_timer()

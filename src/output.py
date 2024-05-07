@@ -16,7 +16,6 @@ def output_excel(os, datetime, chosen_year_q, cur, re):
     worksheet = workbook.active
     worksheet.title = f'KPOP_{chosen_year_q}'
     row = 2
-    row_ver = 2
     col = 1
     artists = cur.execute("""SELECT artist FROM mv""").fetchall()
     already_read = set()
